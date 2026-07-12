@@ -1,421 +1,332 @@
+local game = game
+local pcall, type, tostring, ipairs, pairs = pcall, type, tostring, ipairs, pairs
+local task_spawn, task_wait, task_delay = task.spawn, task.wait, task.delay
+local os_time = os.time
+
 local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
 local HttpService = game:GetService("HttpService")
 local TweenService = game:GetService("TweenService")
 local TeleportService = game:GetService("TeleportService")
+local LocalPlayer = Players.LocalPlayer
 
-local loadstring, pcall, tostring, task = loadstring, pcall, tostring, task
-
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "IndexLoader"
-screenGui.ResetOnSpawn = false
-screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-screenGui.IgnoreGuiInset = true
-
-local ok = pcall(function()
-	screenGui.Parent = game:GetService("CoreGui")
-end)
-if not ok then
-	screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+local get_hidden_ui = gethui or function()
+    local ok, core = pcall(function() return game:GetService("CoreGui") end)
+    return ok and core or LocalPlayer:WaitForChild("PlayerGui")
 end
 
-local titleLabel = Instance.new("TextLabel")
-titleLabel.Name = "TitleText"
-titleLabel.Size = UDim2.new(1, 0, 1, 0)
-titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "[ Kairiz ]"
-titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-titleLabel.TextSize = 54
-titleLabel.Font = Enum.Font.GothamMedium
-titleLabel.TextTransparency = 1
-titleLabel.MaxVisibleGraphemes = 0
-titleLabel.Parent = screenGui
+local function universal_request(url)
+    local req_func = (type(syn) == "table" and syn.request) or request or http_request or (type(fluxus) == "table" and fluxus.request)
+    if req_func then
+        local ok, res = pcall(req_func, { Url = url, Method = "GET", Timeout = 7 })
+        if ok and res and res.Body then return res.Body end
+    end
+    local ok, res = pcall(function() return game:HttpGet(url) end)
+    return ok and res or nil
+end
+
+local function create_instance(class_name, properties)
+    local inst = Instance.new(class_name)
+    for prop, val in pairs(properties) do inst[prop] = val end
+    return inst
+end
+
+local function play_safe_tween(object, tween_info, properties)
+    if not object or not object.Parent then return end
+    local tween = TweenService:Create(object, tween_info, properties)
+    tween:Play()
+    task_spawn(function()
+        tween.Completed:Wait()
+        pcall(function() tween:Destroy() end)
+    end)
+    return tween
+end
+
+local screen_gui = create_instance("ScreenGui", {
+    Name = HttpService:GenerateGUID(false),
+    ResetOnSpawn = false,
+    ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+    IgnoreGuiInset = true,
+    Parent = get_hidden_ui()
+})
+
+local title_label = create_instance("TextLabel", {
+    Name = "TitleText",
+    Size = UDim2.fromScale(1, 1),
+    BackgroundTransparency = 1,
+    Text = "[ Kairiz ]",
+    TextColor3 = Color3.fromRGB(255, 255, 255),
+    TextSize = 54,
+    Font = Enum.Font.GothamMedium,
+    TextTransparency = 1,
+    MaxVisibleGraphemes = 0,
+    Parent = screen_gui
+})
 
 local LOADER_URL = "https://raw.githubusercontent.com/Its3rr0rsWRLD/Index/main/loader.json"
-local prefetchConfig, prefetchConfigErr
-local prefetchScript, prefetchScriptErr
-local prefetchDone = false
+local fetch_data = { config = nil, script = nil, err = nil, status = "operational", done = false }
 
-task.spawn(function()
-	local raw
-	for i = 1, 3 do
-		local okRaw, res = pcall(function() return game:HttpGet(LOADER_URL) end)
-		if okRaw then raw = res break end
-		task.wait(1)
-	end
-	
-	if not raw then prefetchConfigErr = "Network Timeout/Error" prefetchDone = true return end
-	local okJson, parsed = pcall(function() return HttpService:JSONDecode(raw) end)
-	if not okJson then prefetchConfigErr = "Invalid JSON Config" prefetchDone = true return end
-	prefetchConfig = parsed
+task_spawn(function()
+    local raw_json
+    for _ = 1, 3 do
+        raw_json = universal_request(LOADER_URL)
+        if raw_json then break end
+        task_wait(1)
+    end
+    
+    if not raw_json then fetch_data.err = "Koneksi ke server gagal/Timeout."; fetch_data.done = true; return end
+    
+    local ok_json, parsed = pcall(function() return HttpService:JSONDecode(raw_json) end)
+    if not ok_json or not parsed then fetch_data.err = "Format konfigurasi rusak."; fetch_data.done = true; return end
+    
+    fetch_data.config = parsed
 
-	local placeId = tostring(game.PlaceId)
-	local gameData = parsed.games and parsed.games[placeId]
-	if gameData and gameData.url then
-		local okSrc, src = pcall(function() return game:HttpGet(gameData.url) end)
-		if okSrc then prefetchScript = src else prefetchScriptErr = src end
-	end
-	prefetchDone = true
+    if parsed.blacklist and type(parsed.blacklist) == "table" then
+        for _, id in ipairs(parsed.blacklist) do
+            if id == LocalPlayer.UserId then
+                fetch_data.err = "Akses ditolak. Akun Anda masuk daftar hitam."
+                fetch_data.done = true
+                return
+            end
+        end
+    end
+
+    local p_id, g_id = tostring(game.PlaceId), tostring(game.GameId)
+    local game_data = parsed.games and (parsed.games[p_id] or parsed.games[g_id])
+    
+    if game_data then
+        if game_data.status then fetch_data.status = string.lower(game_data.status) end
+        if game_data.url and fetch_data.status == "operational" then
+            fetch_data.script = universal_request(game_data.url)
+        end
+    end
+    fetch_data.done = true
 end)
 
-local fadeIn = TweenService:Create(titleLabel, TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-	TextTransparency = 0,
-})
-fadeIn:Play()
-fadeIn.Completed:Wait()
-task.wait(0.2)
-
-local totalChars = #titleLabel.Text
-for i = 1, totalChars do
-	titleLabel.MaxVisibleGraphemes = i
-	task.wait(0.08)
+play_safe_tween(title_label, TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { TextTransparency = 0 })
+task_wait(0.6)
+for i = 1, #title_label.Text do
+    title_label.MaxVisibleGraphemes = i
+    task_wait(0.06)
 end
-
-task.wait(1.2)
+task_wait(1)
 
 local Theme = {
-	Dialog              = Color3.fromRGB(30, 30, 30),
-	DialogHolder        = Color3.fromRGB(22, 22, 22),
-	DialogHolderLine    = Color3.fromRGB(40, 40, 40),
-	DialogButton        = Color3.fromRGB(35, 35, 35),
-	DialogButtonBorder  = Color3.fromRGB(65, 65, 65),
-	DialogBorder        = Color3.fromRGB(55, 55, 55),
-	Text                = Color3.fromRGB(245, 245, 245),
-	Hover               = Color3.fromRGB(255, 255, 255),
+    Dialog = Color3.fromRGB(30, 30, 30),
+    Holder = Color3.fromRGB(22, 22, 22),
+    Line = Color3.fromRGB(40, 40, 40),
+    Button = Color3.fromRGB(35, 35, 35),
+    Border = Color3.fromRGB(55, 55, 55),
+    Text = Color3.fromRGB(245, 245, 245),
+    Hover = Color3.fromRGB(255, 255, 255)
 }
 
-local GothamFace     = Font.new("rbxasset://fonts/families/GothamSSm.json")
-local GothamSemiBold = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.SemiBold)
+local FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Medium)
 
-local function showDialog(message, buttons)
-	local dialogGui = Instance.new("ScreenGui")
-	dialogGui.Name = "IndexDialog"
-	dialogGui.ResetOnSpawn = false
-	dialogGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-	dialogGui.IgnoreGuiInset = true
-	dialogGui.DisplayOrder = 10
-	
-	local parented = pcall(function() dialogGui.Parent = game:GetService("CoreGui") end)
-	if not parented then dialogGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
+local function show_dialog(message, buttons)
+    local dialog_gui = create_instance("ScreenGui", {
+        Name = HttpService:GenerateGUID(false),
+        ResetOnSpawn = false,
+        DisplayOrder = 10,
+        IgnoreGuiInset = true,
+        Parent = get_hidden_ui()
+    })
 
-	local TintFrame = Instance.new("TextButton")
-	TintFrame.Name = "TintFrame"
-	TintFrame.Text = ""
-	TintFrame.AutoButtonColor = false
-	TintFrame.Size = UDim2.fromScale(1, 1)
-	TintFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-	TintFrame.BackgroundTransparency = 1
-	TintFrame.BorderSizePixel = 0
-	TintFrame.Parent = dialogGui
+    local tint = create_instance("TextButton", {
+        Text = "", AutoButtonColor = false,
+        Size = UDim2.fromScale(1, 1),
+        BackgroundColor3 = Color3.new(0, 0, 0),
+        BackgroundTransparency = 1,
+        Parent = dialog_gui
+    })
 
-	local Root = Instance.new("CanvasGroup")
-	Root.Name = "Root"
-	Root.Size = UDim2.new(0, 400, 0, 210)
-	Root.AnchorPoint = Vector2.new(0.5, 0.5)
-	Root.Position = UDim2.fromScale(0.5, 0.5)
-	Root.BackgroundColor3 = Theme.Dialog
-	Root.BorderSizePixel = 0
-	Root.GroupTransparency = 1
-	Root.Parent = TintFrame
+    local root = create_instance("CanvasGroup", {
+        Size = UDim2.fromScale(0.9, 0.3),
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = UDim2.fromScale(0.5, 0.5),
+        BackgroundColor3 = Theme.Dialog,
+        GroupTransparency = 1,
+        Parent = tint
+    })
 
-	local RootCorner = Instance.new("UICorner")
-	RootCorner.CornerRadius = UDim.new(0, 10)
-	RootCorner.Parent = Root
+    create_instance("UISizeConstraint", { MaxSize = Vector2.new(420, 220), MinSize = Vector2.new(280, 180), Parent = root })
+    create_instance("UICorner", { CornerRadius = UDim.new(0, 10), Parent = root })
+    create_instance("UIStroke", { Color = Theme.Border, Transparency = 0.4, Parent = root })
+    local scale_fx = create_instance("UIScale", { Scale = 1.05, Parent = root })
 
-	local RootStroke = Instance.new("UIStroke")
-	RootStroke.Color = Theme.DialogBorder
-	RootStroke.Transparency = 0.4
-	RootStroke.Parent = Root
+    create_instance("TextLabel", {
+        BackgroundTransparency = 1,
+        Size = UDim2.new(1, -40, 1, -95),
+        Position = UDim2.fromOffset(20, 15),
+        FontFace = FontFace, TextColor3 = Theme.Text, TextSize = 14,
+        TextWrapped = true, Text = message, Parent = root
+    })
 
-	local Scale = Instance.new("UIScale")
-	Scale.Scale = 1.05
-	Scale.Parent = Root
+    local btn_frame = create_instance("Frame", {
+        Size = UDim2.new(1, 0, 0, 65), Position = UDim2.new(0, 0, 1, -65),
+        BackgroundColor3 = Theme.Holder, BorderSizePixel = 0, Parent = root
+    })
+    create_instance("Frame", { Size = UDim2.new(1, 0, 0, 1), BackgroundColor3 = Theme.Line, BorderSizePixel = 0, Parent = btn_frame })
 
-	local AspectConstraint = Instance.new("UIAspectRatioConstraint")
-	AspectConstraint.AspectRatio = 400 / 210
-	AspectConstraint.DominantAxis = Enum.DominantAxis.Width
-	AspectConstraint.Parent = Root
+    local btn_holder = create_instance("Frame", {
+        Size = UDim2.new(1, -30, 1, -25), AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = UDim2.fromScale(0.5, 0.5), BackgroundTransparency = 1, Parent = btn_frame
+    })
+    create_instance("UIListLayout", {
+        Padding = UDim.new(0, 12), FillDirection = Enum.FillDirection.Horizontal,
+        HorizontalAlignment = Enum.HorizontalAlignment.Center, VerticalAlignment = Enum.VerticalAlignment.Center, Parent = btn_holder
+    })
 
-	local Body = Instance.new("TextLabel")
-	Body.Name = "Body"
-	Body.BackgroundTransparency = 1
-	Body.Size = UDim2.new(1, -40, 1, -95)
-	Body.Position = UDim2.fromOffset(20, 15)
-	Body.FontFace = GothamSemiBold
-	Body.TextColor3 = Theme.Text
-	Body.TextSize = 15
-	Body.TextWrapped = true
-	Body.TextXAlignment = Enum.TextXAlignment.Center
-	Body.TextYAlignment = Enum.TextYAlignment.Center
-	Body.Text = message
-	Body.Parent = Root
+    local is_open = true
+    local connections = {}
 
-	local ButtonHolderFrame = Instance.new("Frame")
-	ButtonHolderFrame.Name = "ButtonHolderFrame"
-	ButtonHolderFrame.Size = UDim2.new(1, 0, 0, 65)
-	ButtonHolderFrame.Position = UDim2.new(0, 0, 1, -65)
-	ButtonHolderFrame.BackgroundColor3 = Theme.DialogHolder
-	ButtonHolderFrame.BorderSizePixel = 0
-	ButtonHolderFrame.Parent = Root
+    local function close_dialog()
+        if not is_open then return end
+        is_open = false
+        for _, conn in ipairs(connections) do pcall(function() conn:Disconnect() end) end
+        play_safe_tween(root, TweenInfo.new(0.18, Enum.EasingStyle.Quad), { GroupTransparency = 1 })
+        play_safe_tween(scale_fx, TweenInfo.new(0.18, Enum.EasingStyle.Quad), { Scale = 1.05 })
+        play_safe_tween(tint, TweenInfo.new(0.18, Enum.EasingStyle.Quad), { BackgroundTransparency = 1 })
+        task_delay(0.25, function() pcall(function() dialog_gui:Destroy() end) end)
+    end
 
-	local SeparatorLine = Instance.new("Frame")
-	SeparatorLine.Size = UDim2.new(1, 0, 0, 1)
-	SeparatorLine.BackgroundColor3 = Theme.DialogHolderLine
-	SeparatorLine.BorderSizePixel = 0
-	SeparatorLine.Parent = ButtonHolderFrame
+    for i, btn in ipairs(buttons) do
+        local frame = create_instance("TextButton", {
+            Text = "", AutoButtonColor = false,
+            Size = UDim2.new(1 / #buttons, -(((#buttons - 1) * 12) / #buttons), 1, 0),
+            BackgroundColor3 = Theme.Button, LayoutOrder = i, Parent = btn_holder
+        })
+        create_instance("UICorner", { CornerRadius = UDim.new(0, 6), Parent = frame })
+        create_instance("UIStroke", { ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Color = Theme.Border, Transparency = 0.5, Parent = frame })
+        
+        local hover = create_instance("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Theme.Hover, BackgroundTransparency = 1, Parent = frame })
+        create_instance("UICorner", { CornerRadius = UDim.new(0, 6), Parent = hover })
+        
+        create_instance("TextLabel", {
+            BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1),
+            FontFace = FontFace, Text = btn.Title, TextColor3 = Theme.Text, TextSize = 13, Parent = frame
+        })
 
-	local ButtonHolder = Instance.new("Frame")
-	ButtonHolder.Size = UDim2.new(1, -30, 1, -25)
-	ButtonHolder.AnchorPoint = Vector2.new(0.5, 0.5)
-	ButtonHolder.Position = UDim2.fromScale(0.5, 0.5)
-	ButtonHolder.BackgroundTransparency = 1
-	ButtonHolder.Parent = ButtonHolderFrame
+        table.insert(connections, frame.MouseEnter:Connect(function() play_safe_tween(hover, TweenInfo.new(0.15), { BackgroundTransparency = 0.94 }) end))
+        table.insert(connections, frame.MouseLeave:Connect(function() play_safe_tween(hover, TweenInfo.new(0.15), { BackgroundTransparency = 1 }) end))
+        table.insert(connections, frame.MouseButton1Click:Connect(function()
+            if btn.Callback then task_spawn(btn.Callback) end
+            close_dialog()
+        end))
+    end
 
-	local ListLayout = Instance.new("UIListLayout")
-	ListLayout.Padding = UDim.new(0, 12)
-	ListLayout.FillDirection = Enum.FillDirection.Horizontal
-	ListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-	ListLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-	ListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	ListLayout.Parent = ButtonHolder
-
-	local isOpen = true
-	local connections = {}
-
-	local function close()
-		if not isOpen then return end
-		isOpen = false
-
-		for _, conn in ipairs(connections) do
-			if conn then conn:Disconnect() end
-		end
-
-		TweenService:Create(Root, TweenInfo.new(0.2, Enum.EasingStyle.Quad), { GroupTransparency = 1 }):Play()
-		TweenService:Create(Scale, TweenInfo.new(0.2, Enum.EasingStyle.Quad), { Scale = 1.05 }):Play()
-		TweenService:Create(TintFrame, TweenInfo.new(0.2, Enum.EasingStyle.Quad), { BackgroundTransparency = 1 }):Play()
-
-		task.delay(0.25, function() dialogGui:Destroy() end)
-	end
-
-	local function createButton(title, layoutOrder, callback)
-		local Frame = Instance.new("TextButton")
-		Frame.Name = title
-		Frame.Text = ""
-		Frame.AutoButtonColor = false
-		Frame.Size = UDim2.new(0, 0, 1, 0)
-		Frame.BackgroundColor3 = Theme.DialogButton
-		Frame.BorderSizePixel = 0
-		Frame.LayoutOrder = layoutOrder
-		Frame.Parent = ButtonHolder
-
-		local Corner = Instance.new("UICorner")
-		Corner.CornerRadius = UDim.new(0, 6)
-		Corner.Parent = Frame
-
-		local Stroke = Instance.new("UIStroke")
-		Stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-		Stroke.Color = Theme.DialogButtonBorder
-		Stroke.Transparency = 0.5
-		Stroke.Parent = Frame
-
-		local Hover = Instance.new("Frame")
-		Hover.Size = UDim2.fromScale(1, 1)
-		Hover.BackgroundColor3 = Theme.Hover
-		Hover.BackgroundTransparency = 1
-		Hover.BorderSizePixel = 0
-		Hover.Parent = Frame
-
-		local HoverCorner = Instance.new("UICorner")
-		HoverCorner.CornerRadius = UDim.new(0, 6)
-		HoverCorner.Parent = Hover
-
-		local Label = Instance.new("TextLabel")
-		Label.BackgroundTransparency = 1
-		Label.Size = UDim2.fromScale(1, 1)
-		Label.FontFace = GothamFace
-		Label.Text = title
-		Label.TextColor3 = Theme.Text
-		Label.TextSize = 13
-		Label.TextXAlignment = Enum.TextXAlignment.Center
-		Label.TextYAlignment = Enum.TextYAlignment.Center
-		Label.Parent = Frame
-
-		local hoverTween = TweenInfo.new(0.15, Enum.EasingStyle.Quad)
-		table.insert(connections, Frame.MouseEnter:Connect(function()
-			TweenService:Create(Hover, hoverTween, { BackgroundTransparency = 0.94 }):Play()
-		end))
-		table.insert(connections, Frame.MouseLeave:Connect(function()
-			TweenService:Create(Hover, hoverTween, { BackgroundTransparency = 1 }):Play()
-		end))
-		table.insert(connections, Frame.MouseButton1Click:Connect(function()
-			if callback then pcall(callback) end
-			close()
-		end))
-
-		return Frame
-	end
-
-	for i, btn in ipairs(buttons) do createButton(btn.Title, i, btn.Callback) end
-	local n = #buttons
-	for _, child in ipairs(ButtonHolder:GetChildren()) do
-		if child:IsA("TextButton") then
-			child.Size = UDim2.new(1 / n, -(((n - 1) * 12) / n), 1, 0)
-		end
-	end
-
-	TweenService:Create(TintFrame, TweenInfo.new(0.2, Enum.EasingStyle.Quad), { BackgroundTransparency = 0.6 }):Play()
-	TweenService:Create(Root, TweenInfo.new(0.2, Enum.EasingStyle.Quad), { GroupTransparency = 0 }):Play()
-	TweenService:Create(Scale, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+    play_safe_tween(tint, TweenInfo.new(0.2), { BackgroundTransparency = 0.6 })
+    play_safe_tween(root, TweenInfo.new(0.2), { GroupTransparency = 0 })
+    play_safe_tween(scale_fx, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 })
 end
 
-local loaderFaded = false
-local function fadeOutLoader()
-	if loaderFaded then return end
-	loaderFaded = true
-	local fadeOut = TweenService:Create(titleLabel, TweenInfo.new(0.4, Enum.EasingStyle.Quad), { TextTransparency = 1 })
-	fadeOut:Play()
-	fadeOut.Completed:Wait()
-	if screenGui then screenGui:Destroy() end
+local loader_faded = false
+local function fade_out_loader()
+    if loader_faded then return end
+    loader_faded = true
+    if title_label and title_label.Parent then
+        local fade = TweenService:Create(title_label, TweenInfo.new(0.4), { TextTransparency = 1 })
+        fade:Play()
+        fade.Completed:Wait()
+        pcall(function() fade:Destroy() end)
+    end
+    if screen_gui then pcall(function() screen_gui:Destroy() end) end
 end
 
-local DISCORD_DISMISSED_FILE = "Index/discord_dismissed"
-
-local function isDiscordDismissed()
-	if not (isfile and readfile) then return false end
-	local ok, result = pcall(function() return isfile(DISCORD_DISMISSED_FILE) end)
-	if ok and result then
-		local content = readfile(DISCORD_DISMISSED_FILE)
-		return content == "1"
-	end
-	return false
+local function is_discord_dismissed()
+    if not (isfile and readfile) then return false end
+    local ok, res = pcall(function() return isfile("Index/dismissed.txt") and readfile("Index/dismissed.txt") == "1" end)
+    return ok and res
 end
 
-local function markDiscordDismissed()
-	if not writefile then return end
-	pcall(function()
-		if makefolder and isfolder and not isfolder("Index") then makefolder("Index") end
-		writefile(DISCORD_DISMISSED_FILE, "1")
-	end)
+local function mark_discord_dismissed()
+    if writefile then
+        pcall(function()
+            if makefolder and isfolder and not isfolder("Index") then makefolder("Index") end
+            writefile("Index/dismissed.txt", "1")
+        end)
+    end
 end
 
-local function showActionDialog(message, onAccept)
-	showDialog(message, {
-		{
-			Title = "Okay",
-			Callback = function()
-				if onAccept then task.spawn(onAccept) end
-			end,
-		},
-		{
-			Title = "Copy Discord",
-			Callback = function()
-				if setclipboard then
-					setclipboard("https://discord.gg/RhdPCbZNUZ")
-					task.spawn(function()
-						local originalText = titleLabel.Text
-						titleLabel.Text = "Discord Link Copied!"
-						task.wait(1.5)
-						titleLabel.Text = originalText
-					end)
-				end
-				if onAccept then task.spawn(onAccept) end
-			end,
-		},
-	})
+local start_time = os_time()
+while not fetch_data.done and (os_time() - start_time) < 10 do task_wait(0.1) end
+
+if fetch_data.err then
+    show_dialog("Error: " .. fetch_data.err .. "\n\nDiscord: discord.gg/RhdPCbZNUZ", {{ Title = "Tutup", Callback = fade_out_loader }})
+    return
 end
 
-local startTime = os.time()
-while not prefetchDone and (os.time() - startTime) < 10 do
-	task.wait(0.1)
+if not fetch_data.config or not fetch_data.config.games then
+    show_dialog("Gagal menyinkronisasi data server.\n\nDiscord: discord.gg/RhdPCbZNUZ", {{ Title = "Tutup", Callback = fade_out_loader }})
+    return
 end
 
-local success = prefetchConfig ~= nil
-local config = prefetchConfig
-
-if not success or not config then
-	showActionDialog("Failed to fetch the Index game list.\n\nJoin our Discord for support:\ndiscord.gg/RhdPCbZNUZ", fadeOutLoader)
-	return
+if not (fetch_data.config.games[tostring(game.PlaceId)] or fetch_data.config.games[tostring(game.GameId)]) then
+    show_dialog("Game belum didukung.\nID: " .. game.PlaceId .. "\n\nDiscord: discord.gg/RhdPCbZNUZ", {{ Title = "Tutup", Callback = fade_out_loader }})
+    return
 end
 
-local placeId = tostring(game.PlaceId)
-local gameData = config.games and config.games[placeId]
-
-if not gameData then
-	showActionDialog("This game is not yet supported.\nPlace ID: " .. placeId .. "\n\nRequest it on our Discord:\ndiscord.gg/RhdPCbZNUZ", fadeOutLoader)
-	return
+if fetch_data.status == "patching" or fetch_data.status == "maintenance" then
+    show_dialog("Script sedang dalam perbaikan (Patching/Maintenance).\n\nMohon tunggu pembaruan di Discord.", {{ Title = "Mengerti", Callback = fade_out_loader }})
+    return
 end
 
-task.wait(0.4)
+task_wait(0.4)
 
-local function loadGameScript()
-	fadeOutLoader()
-	task.wait(0.1)
-	_G.IndexShowDiscord = true
+local function execute_main_script()
+    fade_out_loader()
+    if type(loadstring) ~= "function" then
+        show_dialog("Executor Anda tidak didukung (Tidak memiliki loadstring).", {{ Title = "Tutup" }})
+        return
+    end
 
-	local source = prefetchScript
-	if not source then
-		local fetchOk, res = pcall(function() return game:HttpGet(gameData.url) end)
-		if fetchOk then source = res end
-	end
+    if not fetch_data.script or fetch_data.script == "" then
+        show_dialog("Gagal mengambil source script.", {{ Title = "Tutup" }})
+        return
+    end
 
-	if not source then
-		showActionDialog("Failed to fetch the game script.\n\nPlease check your connection.", nil)
-		return
-	end
+    local func, err = loadstring(fetch_data.script)
+    if not func then
+        show_dialog("Kompilasi gagal:\n" .. tostring(err), {{ Title = "Tutup" }})
+        return
+    end
 
-	local fn, compileErr = loadstring(source)
-	if not fn then
-		showActionDialog("Failed to compile the game script.\n\n" .. tostring(compileErr), nil)
-		return
-	end
-
-	setfenv(fn, getfenv())
-	local runOk, runErr = pcall(fn)
-	if not runOk then
-		showActionDialog("Failed to run the game script.\n\n" .. tostring(runErr), nil)
-	end
+    local success, run_err = pcall(func)
+    if not success then
+        show_dialog("Runtime Error:\n" .. tostring(run_err), {{ Title = "Tutup" }})
+    end
 end
 
-local function detectMainAccount()
-	local score = 0
-	local age = LocalPlayer.AccountAge or 0
-	
-	if age > 1095 then score = score + 3
-	elseif age > 365 then score = score + 2
-	elseif age > 30 then score = score + 1 end
-
-	if LocalPlayer.MembershipType == Enum.MembershipType.Premium then
-		score = score + 3
-	end
-
-	pcall(function()
-		local url = "https://friends.roproxy.com/v1/users/" .. tostring(LocalPlayer.UserId) .. "/friends/count"
-		local raw = game:HttpGet(url)
-		local data = HttpService:JSONDecode(raw)
-		local count = data and data.count or 0
-		if count > 50 then score = score + 2
-		elseif count > 10 then score = score + 1 end
-	end)
-
-	return score >= 4
+local function safe_account_check()
+    local score = 0
+    if (LocalPlayer.AccountAge or 0) > 365 then score = score + 2 end
+    if LocalPlayer.MembershipType == Enum.MembershipType.Premium then score = score + 3 end
+    
+    pcall(function()
+        local raw = universal_request("https://friends.roproxy.com/v1/users/" .. LocalPlayer.UserId .. "/friends/count")
+        if raw and not raw:find("<html>") then
+            local data = HttpService:JSONDecode(raw)
+            if data and type(data.count) == "number" and data.count > 30 then score = score + 2 end
+        end
+    end)
+    return score >= 4
 end
 
-pcall(function()
-	TeleportService.LocalPlayerLeftGame:Connect(function()
-		if screenGui then screenGui:Destroy() end
-	end)
-end)
+pcall(function() TeleportService.LocalPlayerLeftGame:Connect(function() pcall(function() screen_gui:Destroy() end) end) end)
 
-if detectMainAccount() then
-	showDialog("Hey, we detected you may be on a main account. We recommend NOT using this on your main to avoid risking your account.", {
-		{ Title = "Continue Anyway", Callback = function() task.spawn(loadGameScript) end },
-		{ Title = "Stop Script", Callback = function() fadeOutLoader() end }
-	})
-elseif isDiscordDismissed() then
-	task.spawn(loadGameScript)
+if safe_account_check() then
+    show_dialog("PERINGATAN!\nKami mendeteksi Anda menggunakan Akun Utama. Gunakan akun alternatif untuk mencegah resiko pemblokiran.", {
+        { Title = "Tetap Eksekusi", Callback = execute_main_script },
+        { Title = "Batalkan", Callback = fade_out_loader }
+    })
+elseif not is_discord_dismissed() then
+    show_dialog("Script ini gratis!\nDukung kami dengan bergabung ke server Discord.\n\ndiscord.gg/RhdPCbZNUZ", {
+        { Title = "Lanjutkan", Callback = function() mark_discord_dismissed(); execute_main_script() end },
+        { Title = "Salin Link", Callback = function()
+            if setclipboard then setclipboard("https://discord.gg/RhdPCbZNUZ") end
+            mark_discord_dismissed()
+            execute_main_script()
+        end}
+    })
 else
-	showActionDialog("Our scripts are keyless, but we ask that you join the Discord to support us and get updates on new scripts!\n\ndiscord.gg/RhdPCbZNUZ", function()
-		markDiscordDismissed()
-		loadGameScript()
-	end)
+    task_spawn(execute_main_script)
 end
