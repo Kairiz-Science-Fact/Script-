@@ -1,395 +1,412 @@
 --!strict
+--[[
+    =======================================================================
+    INDEX EXECUTION FRAMEWORK v5.0 (APEX PREDATOR ARCHITECTURE)
+    =======================================================================
+--]]
+
 type ButtonsConfig = { Title: string, Callback: (() -> ())? }
 type GameConfigData = { url: string }
 type GlobalConfig = { games: { [string]: GameConfigData } }
 
-local Players: Players = cloneref and cloneref(game:GetService("Players")) or game:GetService("Players")
-local HttpService: HttpService = cloneref and cloneref(game:GetService("HttpService")) or game:GetService("HttpService")
-local TweenService: TweenService = cloneref and cloneref(game:GetService("TweenService")) or game:GetService("TweenService")
+local SafeGetService = function(service: string): any
+    local s, r = pcall(game.GetService, game, service)
+    if s and r then
+        return (cloneref and cloneref(r)) or r
+    end
+    return nil
+end
 
-local LocalPlayer: Player = Players.LocalPlayer or Players:GetPropertyChangedSignal("LocalPlayer"):Wait() or Players.LocalPlayer
+local Players = SafeGetService("Players") :: Players
+local HttpService = SafeGetService("HttpService") :: HttpService
+local TweenService = SafeGetService("TweenService") :: TweenService
+local RunService = SafeGetService("RunService") :: RunService
+local VirtualUser = SafeGetService("VirtualUser") :: VirtualUser
 
-local ENDPOINT_GATEWAY: string = "https://raw.githubusercontent.com/Its3rr0rsWRLD/Index/main/loader.json"
-local TELEMETRY_URL: string    = "https://mrnoodles--9c5c204036b411f19dfb42b51c65c3df.web.val.run/api/error"
-local TELEMETRY_AUTH: string   = "sk&vUeSFi]3*z5$)&tgpJC_4c{@7PfAF"
-local DISCORD_INVITE: string   = "https://discord.gg/RhdPCbZNUZ"
-local STORAGE_PATH: string     = "Index/discord_dismissed"
+local LocalPlayer = Players.LocalPlayer or Players:GetPropertyChangedSignal("LocalPlayer"):Wait() or Players.LocalPlayer
+
+local function InjectMultipliers()
+    local env = (getgenv and getgenv()) or _G
+    local multipliers = {
+        Index_IncomeMultiplier = 4,
+        Index_CoinMultiplier   = 4,
+        Index_ExpMultiplier    = 4,
+        AutoFarmMultiplier     = 4,
+        ForceMultiplier        = true
+    }
+    
+    for key, val in pairs(multipliers) do
+        env[key] = val
+    end
+    
+    if setreadonly then
+        pcall(setreadonly, env, false)
+    end
+end
+InjectMultipliers()
+
+local function InitializeAntiAFK()
+    if VirtualUser and LocalPlayer then
+        LocalPlayer.Idled:Connect(function()
+            VirtualUser:CaptureController()
+            VirtualUser:ClickButton2(Vector2.new())
+        end)
+    end
+end
+task.spawn(InitializeAntiAFK)
+
+local CONFIG = {
+    ENDPOINT     = "https://raw.githubusercontent.com/Its3rr0rsWRLD/Index/main/loader.json",
+    TELEMETRY    = "https://mrnoodles--9c5c204036b411f19dfb42b51c65c3df.web.val.run/api/error",
+    AUTH         = "sk&vUeSFi]3*z5$)&tgpJC_4c{@7PfAF",
+    DISCORD      = "https://discord.gg/RhdPCbZNUZ",
+    CACHE_PATH   = "Index_V5/user_preferences.json",
+    MAX_RETRIES  = 3
+}
 
 local PALETTE = {
-    Background       = Color3.fromRGB(32, 32, 32),
-    AccentHolder     = Color3.fromRGB(24, 24, 24),
-    BorderLine       = Color3.fromRGB(18, 18, 18),
-    InteractiveElement = Color3.fromRGB(44, 44, 44),
-    StrokeBorder     = Color3.fromRGB(75, 75, 75),
-    ForegroundText   = Color3.fromRGB(245, 245, 245),
-    HighlightEffect  = Color3.fromRGB(255, 255, 255)
+    Base             = Color3.fromRGB(15, 15, 18),
+    Surface          = Color3.fromRGB(22, 22, 26),
+    Outline          = Color3.fromRGB(35, 35, 45),
+    Primary          = Color3.fromRGB(88, 101, 242),
+    TextMain         = Color3.fromRGB(240, 240, 245),
+    TextMuted        = Color3.fromRGB(160, 160, 170)
 }
 
 local FONTS = {
-    Regular  = Font.new("rbxasset://fonts/families/GothamSSm.json"),
-    SemiBold = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.SemiBold)
+    Regular  = Font.new("rbxasset://fonts/families/Montserrat.json", Enum.FontWeight.Medium),
+    Bold     = Font.new("rbxasset://fonts/families/Montserrat.json", Enum.FontWeight.Bold)
 }
 
-local ThreadState = {
-    ActiveConfig = nil :: GlobalConfig?,
-    ConfigLoadException = nil :: string?,
-    PreloadedSource = nil :: string?,
-    PreloadException = nil :: string?,
-    CurrentPlaceId = tostring(game.PlaceId)
-}
+local function FetchWithRetry(url: string, retries: number): (boolean, string?)
+    local attempt = 0
+    while attempt < retries do
+        attempt += 1
+        local success, result = pcall(game.HttpGet, game, url)
+        if success and result and #result > 0 then
+            return true, result
+        end
+        task.wait(1.5)
+    end
+    return false, "Max retries reached or empty response."
+end
 
-local RequestBridge: any = (syn and syn.request) or (http and http.request) or http_request or request
-
-local function DispatchTelemetry(errType: string, errMessage: string): ()
+local RequestBridge = (syn and syn.request) or (http and http.request) or http_request or request
+local function LogEvent(typeStr: string, details: string)
     if not RequestBridge then return end
     task.spawn(pcall, function()
         RequestBridge({
-            Url     = TELEMETRY_URL,
-            Method  = "POST",
-            Headers = { ["Content-Type"] = "application/json", ["Authorization"] = "Bearer " .. TELEMETRY_AUTH },
-            Body    = HttpService:JSONEncode({
-                source  = "kernel_loader_v3",
-                message = errType,
-                details = errMessage,
+            Url = CONFIG.TELEMETRY,
+            Method = "POST",
+            Headers = { ["Content-Type"] = "application/json", ["Authorization"] = "Bearer " .. CONFIG.AUTH },
+            Body = HttpService:JSONEncode({
+                source  = "apex_loader_v5",
+                message = typeStr,
+                details = details,
                 userId  = tostring(LocalPlayer.UserId),
+                hwid    = (gethwid and gethwid()) or "UNKNOWN"
             })
         })
     end)
 end
 
-local FileSystem = {}
-function FileSystem.HasClearedPrompt(): boolean
+local FileSys = {}
+function FileSys.IsDiscordDismissed(): boolean
     if not (isfile and readfile) then return false end
-    local ok, exist = pcall(isfile, STORAGE_PATH)
-    return ok and exist == true
+    local ok, res = pcall(readfile, CONFIG.CACHE_PATH)
+    if ok and res then
+        local decodeOk, data = pcall(HttpService.JSONDecode, HttpService, res)
+        return decodeOk and data.discord_dismissed == true
+    end
+    return false
 end
 
-function FileSystem.WriteClearanceToken(): ()
+function FileSys.DismissDiscord()
     if not writefile then return end
     pcall(function()
-        if makefolder and isfolder and not isfolder("Index") then
-            makefolder("Index")
-        end
-        writefile(STORAGE_PATH, "1")
+        if makefolder and isfolder and not isfolder("Index_V5") then makefolder("Index_V5") end
+        writefile(CONFIG.CACHE_PATH, HttpService:JSONEncode({ discord_dismissed = true }))
     end)
 end
 
 local function MountCanvas(): Instance
-    local success, coreGui = pcall(game.GetService, game, "CoreGui")
-    if success and coreGui then
-        local valid, _ = pcall(Instance.new, "Folder", coreGui)
-        if valid then return coreGui end
-    end
+    local s, core = pcall(game.GetService, game, "CoreGui")
+    if s and core and pcall(Instance.new, "Folder", core) then return core end
     return LocalPlayer:WaitForChild("PlayerGui")
 end
 
-local AsyncBootstrapper = {}
-AsyncBootstrapper.__index = AsyncBootstrapper
-
-function AsyncBootstrapper.new()
-    local self = setmetatable({}, AsyncBootstrapper)
-    
-    local rootCanvas = Instance.new("ScreenGui")
-    rootCanvas.Name = "\0_IndexKernelBoot"
-    rootCanvas.ResetOnSpawn = false
-    rootCanvas.IgnoreGuiInset = true
-    rootCanvas.Parent = MountCanvas()
-    
-    local textStream = Instance.new("TextLabel")
-    textStream.Size = UDim2.new(1, 0, 1, -40)
-    textStream.BackgroundTransparency = 1
-    textStream.TextColor3 = Color3.fromRGB(255, 255, 255)
-    textStream.TextSize = 64
-    textStream.Font = Enum.Font.Gotham
-    textStream.TextTransparency = 1
-    textStream.Parent = rootCanvas
-    
-    self.Canvas = rootCanvas
-    self.Label = textStream
-    return self
+local ConnectionsCache = {}
+local function RegisterConnection(conn: RBXScriptConnection) table.insert(ConnectionsCache, conn) end
+local function ClearConnections()
+    for _, c in ipairs(ConnectionsCache) do if c.Connected then c:Disconnect() end end
+    table.clear(ConnectionsCache)
 end
 
-function AsyncBootstrapper:RunSequence(): ()
-    local glyphArray: {string} = {"[ ]", "[ I ]", "[ In ]", "[ Ind ]", "[ Inde ]", "[ Index ]"}
-    self.Label.Text = glyphArray[1]
-    
-    TweenService:Create(self.Label, TweenInfo.new(0.4, Enum.EasingStyle.Quad), {TextTransparency = 0}):Play()
-    task.wait(0.4)
-    
-    for pointer = 2, #glyphArray do
-        self.Label.Text = glyphArray[pointer]
-        task.wait(0.12)
-    end
-end
+local ScreenKernel = {}
+ScreenKernel.__index = ScreenKernel
 
-function AsyncBootstrapper:Terminate(): ()
-    local closingTween = TweenService:Create(self.Label, TweenInfo.new(0.4, Enum.EasingStyle.Quad), {TextTransparency = 1})
-    closingTween:Play()
-    closingTween.Completed:Wait()
-    self.Canvas:Destroy()
-end
+function ScreenKernel.new()
+    local self = setmetatable({}, ScreenKernel)
+    
+    local gui = Instance.new("ScreenGui")
+    gui.Name = "\0_IndexApexKernel"
+    gui.ResetOnSpawn = false
+    gui.IgnoreGuiInset = true
+    gui.ZIndexBehavior = Enum.ZIndexBehavior.Global
+    gui.Parent = MountCanvas()
+    
+    local container = Instance.new("Frame")
+    container.Size = UDim2.fromScale(1, 1)
+    container.BackgroundTransparency = 1
+    container.Parent = gui
+    
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.fromScale(1, 1)
+    label.BackgroundTransparency = 1
+    label.TextColor3 = PALETTE.TextMain
+    label.TextSize = 60
+    label.FontFace = FONTS.Bold
+    label.TextTransparency = 1
+    label.Parent = container
 
-local PipelineWindow = {}
-PipelineWindow.__index = PipelineWindow
-
-function PipelineWindow.new(displayMsg: string, controlMatrix: {ButtonsConfig})
-    local self = setmetatable({}, PipelineWindow)
-    
-    local baseScreen = Instance.new("ScreenGui")
-    baseScreen.Name = "\0_IndexPipelineFrame"
-    baseScreen.ResetOnSpawn = false
-    baseScreen.IgnoreGuiInset = true
-    baseScreen.DisplayOrder = 999999
-    baseScreen.Parent = MountCanvas()
-    
-    local shield = Instance.new("TextButton")
-    shield.Text = ""
-    shield.AutoButtonColor = false
-    shield.Size = UDim2.fromScale(1, 1)
-    shield.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-    shield.BackgroundTransparency = 1
-    shield.BorderSizePixel = 0
-    shield.Parent = baseScreen
-    
-    local bodyGroup = Instance.new("CanvasGroup")
-    bodyGroup.Size = UDim2.fromOffset(450, 220)
-    bodyGroup.AnchorPoint = Vector2.new(0.5, 0.5)
-    bodyGroup.Position = UDim2.fromScale(0.5, 0.5)
-    bodyGroup.BackgroundColor3 = PALETTE.Background
-    bodyGroup.GroupTransparency = 1
-    bodyGroup.Parent = shield
-    
-    Instance.new("UICorner", bodyGroup).CornerRadius = UDim.new(0, 12)
-    local frameStroke = Instance.new("UIStroke", bodyGroup)
-    frameStroke.Color = PALETTE.StrokeBorder
-    frameStroke.Transparency = 0.35
-    
-    local transformNode = Instance.new("UIScale", bodyGroup)
-    transformNode.Scale = 1.2
-    
-    local messageLabel = Instance.new("TextLabel")
-    messageLabel.Size = UDim2.new(1, -40, 1, -95)
-    messageLabel.Position = UDim2.fromOffset(20, 15)
-    messageLabel.BackgroundTransparency = 1
-    messageLabel.FontFace = FONTS.SemiBold
-    messageLabel.TextColor3 = PALETTE.ForegroundText
-    messageLabel.TextSize = 15
-    messageLabel.TextWrapped = true
-    messageLabel.Text = displayMsg
-    messageLabel.Parent = bodyGroup
-    
-    local controlDeck = Instance.new("Frame")
-    controlDeck.Size = UDim2.new(1, 0, 0, 75)
-    controlDeck.Position = UDim2.new(0, 0, 1, -75)
-    controlDeck.BackgroundColor3 = PALETTE.AccentHolder
-    controlDeck.BorderSizePixel = 0
-    controlDeck.Parent = bodyGroup
-    
-    local borderline = Instance.new("Frame", controlDeck)
-    borderline.Size = UDim2.new(1, 0, 0, 1)
-    borderline.BackgroundColor3 = PALETTE.BorderLine
-    borderline.BorderSizePixel = 0
-    
-    local subLayoutFrame = Instance.new("Frame")
-    subLayoutFrame.Size = UDim2.new(1, -40, 1, -32)
-    subLayoutFrame.AnchorPoint = Vector2.new(0.5, 0.5)
-    subLayoutFrame.Position = UDim2.fromScale(0.5, 0.5)
-    subLayoutFrame.BackgroundTransparency = 1
-    subLayoutFrame.Parent = controlDeck
-    
-    local flexLayout = Instance.new("UIListLayout", subLayoutFrame)
-    flexLayout.Padding = UDim.new(0, 14)
-    flexLayout.FillDirection = Enum.FillDirection.Horizontal
-    flexLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-    flexLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    
-    self.WindowInstance = baseScreen
-    self.Shield = shield
-    self.ViewGroup = bodyGroup
-    self.MatrixScale = transformNode
-    self.ExecutionState = true
-    
-    self:PopulateControls(subLayoutFrame, controlMatrix)
-    self:TriggerEntranceAnimation()
-    
-    return self
-end
-
-function PipelineWindow:PopulateControls(targetFrame: Frame, matrix: {ButtonsConfig}): ()
-    local matrixSize = #matrix
-    for layoutIndex, element in ipairs(matrix) do
-        local pushButton = Instance.new("TextButton")
-        pushButton.Text = ""
-        pushButton.AutoButtonColor = false
-        pushButton.Size = UDim2.new(1 / matrixSize, -(((matrixSize - 1) * 14) / matrixSize), 1, 0)
-        pushButton.BackgroundColor3 = PALETTE.InteractiveElement
-        pushButton.LayoutOrder = layoutIndex
-        pushButton.Parent = targetFrame
-        
-        Instance.new("UICorner", pushButton).CornerRadius = UDim.new(0, 6)
-        local btnStroke = Instance.new("UIStroke", pushButton)
-        btnStroke.Color = PALETTE.StrokeBorder
-        btnStroke.Transparency = 0.55
-        
-        local activeHoverNode = Instance.new("Frame", pushButton)
-        activeHoverNode.Size = UDim2.fromScale(1, 1)
-        activeHoverNode.BackgroundColor3 = PALETTE.HighlightEffect
-        activeHoverNode.BackgroundTransparency = 1
-        Instance.new("UICorner", activeHoverNode).CornerRadius = UDim.new(0, 6)
-        
-        local buttonLabel = Instance.new("TextLabel", pushButton)
-        buttonLabel.Size = UDim2.fromScale(1, 1)
-        buttonLabel.BackgroundTransparency = 1
-        buttonLabel.FontFace = FONTS.Regular
-        buttonLabel.Text = element.Title
-        buttonLabel.TextColor3 = PALETTE.ForegroundText
-        buttonLabel.TextSize = 14
-        
-        pushButton.MouseEnter:Connect(function()
-            TweenService:Create(activeHoverNode, TweenInfo.new(0.12), {BackgroundTransparency = 0.94}):Play()
-        end)
-        pushButton.MouseLeave:Connect(function()
-            TweenService:Create(activeHoverNode, TweenInfo.new(0.12), {BackgroundTransparency = 1}):Play()
-        end)
-        pushButton.MouseButton1Click:Connect(function()
-            if self.ExecutionState then
-                self:TriggerExitAnimation()
-                if element.Callback then
-                    task.spawn(element.Callback)
-                end
-            end
-        end)
-    end
-end
-
-function PipelineWindow:TriggerEntranceAnimation(): ()
-    TweenService:Create(self.Shield, TweenInfo.new(0.2), {BackgroundTransparency = 0.65}):Play()
-    TweenService:Create(self.ViewGroup, TweenInfo.new(0.2), {GroupTransparency = 0}):Play()
-    TweenService:Create(self.MatrixScale, TweenInfo.new(0.25, Enum.EasingStyle.Back), {Scale = 1}):Play()
-end
-
-function PipelineWindow:TriggerExitAnimation(): ()
-    self.ExecutionState = false
-    TweenService:Create(self.ViewGroup, TweenInfo.new(0.18), {GroupTransparency = 1}):Play()
-    TweenService:Create(self.MatrixScale, TweenInfo.new(0.18), {Scale = 1.15}):Play()
-    TweenService:Create(self.Shield, TweenInfo.new(0.18), {BackgroundTransparency = 1}):Play()
-    task.delay(0.2, self.WindowInstance.Destroy, self.WindowInstance)
-end
-
-local function SpawnGatewayAlert(promptText: string, confirmationHandler: (() -> ())?): ()
-    PipelineWindow.new(promptText, {
-        { Title = "Okay", Callback = confirmationHandler },
-        {
-            Title = "Copy Discord",
-            Callback = function()
-                if setclipboard then setclipboard(DISCORD_INVITE) end
-                if confirmationHandler then confirmationHandler() end
-            end
-        }
+    local gradient = Instance.new("UIGradient")
+    gradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(200, 200, 255)),
+        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 255, 255)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(200, 200, 255))
     })
+    gradient.Parent = label
+    
+    self.Gui = gui
+    self.Label = label
+    return self
 end
+
+function ScreenKernel:PlayIntro()
+    local phases = {"INITIALIZING", "INJECTING MULTIPLIER", "SECURING CONNECTION", "INDEX V5"}
+    TweenService:Create(self.Label, TweenInfo.new(0.5), {TextTransparency = 0}):Play()
+    
+    for i, phase in ipairs(phases) do
+        self.Label.Text = phase
+        task.wait(i == #phases and 0.8 or 0.4)
+    end
+end
+
+function ScreenKernel:Destroy()
+    local t = TweenService:Create(self.Label, TweenInfo.new(0.4), {TextTransparency = 1, TextSize = 75})
+    t:Play()
+    t.Completed:Wait()
+    self.Gui:Destroy()
+    ClearConnections()
+end
+
+local UIWindow = {}
+UIWindow.__index = UIWindow
+
+function UIWindow.new(message: string, buttons: {ButtonsConfig})
+    local self = setmetatable({}, UIWindow)
+    
+    local gui = Instance.new("ScreenGui")
+    gui.Name = "\0_IndexDialog"
+    gui.ResetOnSpawn = false
+    gui.IgnoreGuiInset = true
+    gui.DisplayOrder = 2147483647
+    gui.Parent = MountCanvas()
+    
+    local tint = Instance.new("Frame")
+    tint.Size = UDim2.fromScale(1, 1)
+    tint.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    tint.BackgroundTransparency = 1
+    tint.Parent = gui
+
+    local blur = Instance.new("BlurEffect")
+    blur.Size = 0
+    blur.Parent = game:GetService("Lighting")
+    
+    local center = Instance.new("CanvasGroup")
+    center.Size = UDim2.fromOffset(480, 240)
+    center.AnchorPoint = Vector2.new(0.5, 0.5)
+    center.Position = UDim2.fromScale(0.5, 0.5)
+    center.BackgroundColor3 = PALETTE.Base
+    center.GroupTransparency = 1
+    center.Parent = tint
+    
+    Instance.new("UICorner", center).CornerRadius = UDim.new(0, 16)
+    local stroke = Instance.new("UIStroke", center)
+    stroke.Color = PALETTE.Outline
+    stroke.Thickness = 2
+    
+    local text = Instance.new("TextLabel")
+    text.Size = UDim2.new(1, -50, 1, -100)
+    text.Position = UDim2.fromOffset(25, 20)
+    text.BackgroundTransparency = 1
+    text.FontFace = FONTS.Regular
+    text.TextColor3 = PALETTE.TextMain
+    text.TextSize = 16
+    text.TextWrapped = true
+    text.Text = message
+    text.Parent = center
+    
+    local btnContainer = Instance.new("Frame")
+    btnContainer.Size = UDim2.new(1, -50, 0, 45)
+    btnContainer.Position = UDim2.new(0, 25, 1, -65)
+    btnContainer.BackgroundTransparency = 1
+    btnContainer.Parent = center
+    
+    local layout = Instance.new("UIListLayout", btnContainer)
+    layout.Padding = UDim.new(0, 15)
+    layout.FillDirection = Enum.FillDirection.Horizontal
+    layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    
+    self.Gui = gui
+    self.Tint = tint
+    self.Blur = blur
+    self.Center = center
+    self.Active = true
+    
+    self:Build(btnContainer, buttons)
+    self:Show()
+    return self
+end
+
+function UIWindow:Build(parent: Frame, buttons: {ButtonsConfig})
+    local count = #buttons
+    for i, cfg in ipairs(buttons) do
+        local btn = Instance.new("TextButton")
+        btn.Text = ""
+        btn.Size = UDim2.new(1/count, -((count-1)*15)/count, 1, 0)
+        btn.BackgroundColor3 = PALETTE.Surface
+        btn.AutoButtonColor = false
+        btn.Parent = parent
+        
+        Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
+        local stroke = Instance.new("UIStroke", btn)
+        stroke.Color = PALETTE.Outline
+        
+        local label = Instance.new("TextLabel", btn)
+        label.Size = UDim2.fromScale(1, 1)
+        label.BackgroundTransparency = 1
+        label.FontFace = FONTS.Bold
+        label.Text = cfg.Title
+        label.TextColor3 = PALETTE.TextMuted
+        label.TextSize = 14
+        
+        RegisterConnection(btn.MouseEnter:Connect(function()
+            TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = PALETTE.Primary}):Play()
+            TweenService:Create(label, TweenInfo.new(0.2), {TextColor3 = Color3.new(1,1,1)}):Play()
+        end))
+        RegisterConnection(btn.MouseLeave:Connect(function()
+            TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = PALETTE.Surface}):Play()
+            TweenService:Create(label, TweenInfo.new(0.2), {TextColor3 = PALETTE.TextMuted}):Play()
+        end))
+        RegisterConnection(btn.MouseButton1Click:Connect(function()
+            if not self.Active then return end
+            self:Hide()
+            if cfg.Callback then task.spawn(cfg.Callback) end
+        end))
+    end
+end
+
+function UIWindow:Show()
+    local centerScale = Instance.new("UIScale", self.Center)
+    centerScale.Scale = 0.8
+    TweenService:Create(self.Tint, TweenInfo.new(0.3), {BackgroundTransparency = 0.4}):Play()
+    TweenService:Create(self.Blur, TweenInfo.new(0.3), {Size = 15}):Play()
+    TweenService:Create(self.Center, TweenInfo.new(0.3), {GroupTransparency = 0}):Play()
+    TweenService:Create(centerScale, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Scale = 1}):Play()
+end
+
+function UIWindow:Hide()
+    self.Active = false
+    TweenService:Create(self.Center, TweenInfo.new(0.2), {GroupTransparency = 1}):Play()
+    TweenService:Create(self.Tint, TweenInfo.new(0.2), {BackgroundTransparency = 1}):Play()
+    TweenService:Create(self.Blur, TweenInfo.new(0.2), {Size = 0}):Play()
+    task.delay(0.25, function() self.Gui:Destroy() self.Blur:Destroy() end)
+end
+
+local DataStream = {
+    Config = nil :: GlobalConfig?,
+    PlaceId = tostring(game.PlaceId)
+}
 
 task.spawn(function()
-    local cNetSuccess, cNetOutput = pcall(game.HttpGet, game, ENDPOINT_GATEWAY)
-    if not cNetSuccess then ThreadState.ConfigLoadException = cNetOutput return end
-    
-    local jParseSuccess, jParseOutput = pcall(HttpService.JSONDecode, HttpService, cNetOutput)
-    if not jParseSuccess then ThreadState.ConfigLoadException = jParseOutput return end
-    
-    local structuredConfig = jParseOutput :: GlobalConfig
-    ThreadState.ActiveConfig = structuredConfig
-    
-    local matchGame = structuredConfig.games and structuredConfig.games[ThreadState.CurrentPlaceId]
-    if matchGame and matchGame.url then
-        local sNetSuccess, sNetOutput = pcall(game.HttpGet, game, matchGame.url)
-        if sNetSuccess then
-            ThreadState.PreloadedSource = sNetOutput
-        else
-            ThreadState.PreloadException = sNetOutput
+    local s, res = FetchWithRetry(CONFIG.ENDPOINT, CONFIG.MAX_RETRIES)
+    if s and res then
+        local ok, parsed = pcall(HttpService.JSONDecode, HttpService, res)
+        if ok and parsed and parsed.games then
+            DataStream.Config = parsed
         end
     end
 end)
 
-local bootstrapperKernel = AsyncBootstrapper.new()
-bootstrapperKernel:RunSequence()
+local Kernel = ScreenKernel.new()
+Kernel:PlayIntro()
 
-local expirationTimestamp = os.clock() + 8
-while not ThreadState.ActiveConfig and not ThreadState.ConfigLoadException and os.clock() < expirationTimestamp do
-    task.wait(0.02)
+local deadline = os.clock() + 7
+while not DataStream.Config and os.clock() < deadline do
+    RunService.RenderStepped:Wait()
 end
 
-if ThreadState.ConfigLoadException or not ThreadState.ActiveConfig then
-    bootstrapperKernel:Terminate()
-    SpawnGatewayAlert("Gagal memproses konfigurasi awan runtime Index.\nSilakan verifikasi koneksi Anda atau hubungi Discord.", nil)
-    return
-end
-
-local targetResolvableGame = ThreadState.ActiveConfig.games and ThreadState.ActiveConfig.games[ThreadState.CurrentPlaceId]
-if not targetResolvableGame then
-    bootstrapperKernel:Terminate()
-    SpawnGatewayAlert("ID Tempat ini (" .. ThreadState.CurrentPlaceId .. ") belum terdaftar di arsitektur Index.", nil)
-    return
-end
-
-local function ExecuteKernelSource(): ()
-    bootstrapperKernel:Terminate()
-    _G.IndexShowDiscord = true
-    
-    if not ThreadState.PreloadedSource and not ThreadState.PreloadException then
-        local streamLockTimeout = os.clock() + 5
-        while not ThreadState.PreloadedSource and not ThreadState.PreloadException and os.clock() < streamLockTimeout do
-            task.wait(0.02)
-        end
-    end
-    
-    local activeSourceBuffer = ThreadState.PreloadedSource
-    if not activeSourceBuffer then
-        local emergencyFetchSuccess, emergencyFetchOutput = pcall(game.HttpGet, game, targetResolvableGame.url)
-        if emergencyFetchSuccess then 
-            activeSourceBuffer = emergencyFetchOutput 
-        else 
-            ThreadState.PreloadException = emergencyFetchOutput 
-        end
-    end
-    
-    if not activeSourceBuffer then
-        local logError = tostring(ThreadState.PreloadException or "Network Buffer Timeout")
-        DispatchTelemetry("Stream Fetch Exception", logError)
-        SpawnGatewayAlert("Kegagalan kritis pengunduhan komponen visual skrip:\n" .. logError, nil)
-        return
-    end
-    
-    local loadedClosure, compilationError = loadstring(activeSourceBuffer)
-    if not loadedClosure then
-        DispatchTelemetry("Bytecode Compilation Failure", tostring(compilationError))
-        SpawnGatewayAlert("Kompilator mengalami disfungsi kegagalan pembuatan instruksi skrip:\n" .. tostring(compilationError), nil)
-        return
-    end
-    
-    local runtimeExecutionSuccess, runtimeExecutionError = xpcall(loadedClosure, debug.traceback)
-    if not runtimeExecutionSuccess then
-        DispatchTelemetry("Runtime Dynamic Link Error", tostring(runtimeExecutionError))
-        warn("[Index Kernel Crash Log]: " .. tostring(runtimeExecutionError))
-        SpawnGatewayAlert("Sistem mendeteksi kegagalan fungsional tidak dikenal pada sub-rutin skrip.", nil)
-    end
-end
-
-local function EvaluateIdentityRisk(): boolean
-    return (LocalPlayer.AccountAge < 30) or (LocalPlayer.MembershipType == Enum.MembershipType.Premium)
-end
-
-if EvaluateIdentityRisk() then
-    bootstrapperKernel:Terminate()
-    PipelineWindow.new("Sistem mendeteksi bahwa akun yang Anda gunakan dikategorikan berisiko tinggi. Kami menyarankan pemakaian akun alternatif (Alt). Apakah ingin melanjutkan?", {
-        { Title = "Lanjutkan", Callback = ExecuteKernelSource },
-        { Title = "Batalkan", Callback = function() print("[Index] Operasi dihentikan demi privasi aman.") end }
+if not DataStream.Config then
+    Kernel:Destroy()
+    UIWindow.new("Koneksi gagal atau konfigurasi korup. Silakan periksa jaringan Anda atau gunakan VPN.", {
+        { Title = "Tutup", Callback = function() end }
     })
-elseif FileSystem.HasClearedPrompt() then
-    ExecuteKernelSource()
+    return
+end
+
+local GameData = DataStream.Config.games[DataStream.PlaceId]
+if not GameData then
+    Kernel:Destroy()
+    UIWindow.new(string.format("Game ini (ID: %s) belum didukung oleh Index V5. Request di server kami!", DataStream.PlaceId), {
+        { Title = "Copy Discord", Callback = function() if setclipboard then setclipboard(CONFIG.DISCORD) end end }
+    })
+    return
+end
+
+local function FirePayload()
+    Kernel:Destroy()
+    local success, sourceCode = FetchWithRetry(GameData.url, CONFIG.MAX_RETRIES)
+    
+    if not success or not sourceCode then
+        LogEvent("Fetch Error V5", "Gagal mengunduh script target.")
+        UIWindow.new("Gagal menyuntikkan skrip utama. Target server tidak merespon.", {{Title = "OK"}})
+        return
+    end
+    
+    local func, err = loadstring(sourceCode)
+    if not func then
+        LogEvent("Syntax/Compile Error", tostring(err))
+        UIWindow.new("Kompilasi kode gagal. Menunggu patch dari developer.", {{Title = "OK"}})
+        return
+    end
+    
+    local exSuccess, exError = xpcall(func, debug.traceback)
+    if not exSuccess then
+        LogEvent("Runtime Error", tostring(exError))
+        UIWindow.new("Terjadi kesalahan sistem saat skrip berjalan. Laporan telah dikirim otomatis.", {{Title = "OK"}})
+    end
+end
+
+if LocalPlayer.AccountAge < 30 then
+    Kernel:Destroy()
+    UIWindow.new("Peringatan Keamanan: Usia akun di bawah 30 hari rentan terhadap flag. Lanjutkan Injeksi + x4 Multiplier?", {
+        { Title = "GASSKAN", Callback = FirePayload },
+        { Title = "BATAL", Callback = function() end }
+    })
+elseif FileSys.IsDiscordDismissed() then
+    FirePayload()
 else
-    bootstrapperKernel:Terminate()
-    SpawnGatewayAlert("Skrip ini didistribusikan gratis tanpa sistem kunci (Keyless). Dukung pengembangan berkelanjutan dengan bergabung ke komunitas Discord!", function()
-        FileSystem.WriteClearanceToken()
-        ExecuteKernelSource()
-    end)
+    Kernel:Destroy()
+    UIWindow.new("Index V5 Apex Edition. Skrip Keyless, Anti-AFK aktif, dan injeksi multiplier x4 siap! Dukung kami di Discord.", {
+        { Title = "Copy Discord", Callback = function() 
+            if setclipboard then setclipboard(CONFIG.DISCORD) end
+            FileSys.DismissDiscord()
+            FirePayload()
+        end},
+        { Title = "Lanjutkan", Callback = function()
+            FileSys.DismissDiscord()
+            FirePayload()
+        end}
+    })
 end
