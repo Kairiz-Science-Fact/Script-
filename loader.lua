@@ -1,332 +1,395 @@
-local game = game
-local pcall, type, tostring, ipairs, pairs = pcall, type, tostring, ipairs, pairs
-local task_spawn, task_wait, task_delay = task.spawn, task.wait, task.delay
-local os_time = os.time
+--!strict
+type ButtonsConfig = { Title: string, Callback: (() -> ())? }
+type GameConfigData = { url: string }
+type GlobalConfig = { games: { [string]: GameConfigData } }
 
-local Players = game:GetService("Players")
-local HttpService = game:GetService("HttpService")
-local TweenService = game:GetService("TweenService")
-local TeleportService = game:GetService("TeleportService")
-local LocalPlayer = Players.LocalPlayer
+local Players: Players = cloneref and cloneref(game:GetService("Players")) or game:GetService("Players")
+local HttpService: HttpService = cloneref and cloneref(game:GetService("HttpService")) or game:GetService("HttpService")
+local TweenService: TweenService = cloneref and cloneref(game:GetService("TweenService")) or game:GetService("TweenService")
 
-local get_hidden_ui = gethui or function()
-    local ok, core = pcall(function() return game:GetService("CoreGui") end)
-    return ok and core or LocalPlayer:WaitForChild("PlayerGui")
-end
+local LocalPlayer: Player = Players.LocalPlayer or Players:GetPropertyChangedSignal("LocalPlayer"):Wait() or Players.LocalPlayer
 
-local function universal_request(url)
-    local req_func = (type(syn) == "table" and syn.request) or request or http_request or (type(fluxus) == "table" and fluxus.request)
-    if req_func then
-        local ok, res = pcall(req_func, { Url = url, Method = "GET", Timeout = 7 })
-        if ok and res and res.Body then return res.Body end
-    end
-    local ok, res = pcall(function() return game:HttpGet(url) end)
-    return ok and res or nil
-end
+local ENDPOINT_GATEWAY: string = "https://raw.githubusercontent.com/Its3rr0rsWRLD/Index/main/loader.json"
+local TELEMETRY_URL: string    = "https://mrnoodles--9c5c204036b411f19dfb42b51c65c3df.web.val.run/api/error"
+local TELEMETRY_AUTH: string   = "sk&vUeSFi]3*z5$)&tgpJC_4c{@7PfAF"
+local DISCORD_INVITE: string   = "https://discord.gg/RhdPCbZNUZ"
+local STORAGE_PATH: string     = "Index/discord_dismissed"
 
-local function create_instance(class_name, properties)
-    local inst = Instance.new(class_name)
-    for prop, val in pairs(properties) do inst[prop] = val end
-    return inst
-end
-
-local function play_safe_tween(object, tween_info, properties)
-    if not object or not object.Parent then return end
-    local tween = TweenService:Create(object, tween_info, properties)
-    tween:Play()
-    task_spawn(function()
-        tween.Completed:Wait()
-        pcall(function() tween:Destroy() end)
-    end)
-    return tween
-end
-
-local screen_gui = create_instance("ScreenGui", {
-    Name = HttpService:GenerateGUID(false),
-    ResetOnSpawn = false,
-    ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
-    IgnoreGuiInset = true,
-    Parent = get_hidden_ui()
-})
-
-local title_label = create_instance("TextLabel", {
-    Name = "TitleText",
-    Size = UDim2.fromScale(1, 1),
-    BackgroundTransparency = 1,
-    Text = "[ Kairiz ]",
-    TextColor3 = Color3.fromRGB(255, 255, 255),
-    TextSize = 54,
-    Font = Enum.Font.GothamMedium,
-    TextTransparency = 1,
-    MaxVisibleGraphemes = 0,
-    Parent = screen_gui
-})
-
-local LOADER_URL = "https://raw.githubusercontent.com/Its3rr0rsWRLD/Index/main/loader.json"
-local fetch_data = { config = nil, script = nil, err = nil, status = "operational", done = false }
-
-task_spawn(function()
-    local raw_json
-    for _ = 1, 3 do
-        raw_json = universal_request(LOADER_URL)
-        if raw_json then break end
-        task_wait(1)
-    end
-    
-    if not raw_json then fetch_data.err = "Koneksi ke server gagal/Timeout."; fetch_data.done = true; return end
-    
-    local ok_json, parsed = pcall(function() return HttpService:JSONDecode(raw_json) end)
-    if not ok_json or not parsed then fetch_data.err = "Format konfigurasi rusak."; fetch_data.done = true; return end
-    
-    fetch_data.config = parsed
-
-    if parsed.blacklist and type(parsed.blacklist) == "table" then
-        for _, id in ipairs(parsed.blacklist) do
-            if id == LocalPlayer.UserId then
-                fetch_data.err = "Akses ditolak. Akun Anda masuk daftar hitam."
-                fetch_data.done = true
-                return
-            end
-        end
-    end
-
-    local p_id, g_id = tostring(game.PlaceId), tostring(game.GameId)
-    local game_data = parsed.games and (parsed.games[p_id] or parsed.games[g_id])
-    
-    if game_data then
-        if game_data.status then fetch_data.status = string.lower(game_data.status) end
-        if game_data.url and fetch_data.status == "operational" then
-            fetch_data.script = universal_request(game_data.url)
-        end
-    end
-    fetch_data.done = true
-end)
-
-play_safe_tween(title_label, TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { TextTransparency = 0 })
-task_wait(0.6)
-for i = 1, #title_label.Text do
-    title_label.MaxVisibleGraphemes = i
-    task_wait(0.06)
-end
-task_wait(1)
-
-local Theme = {
-    Dialog = Color3.fromRGB(30, 30, 30),
-    Holder = Color3.fromRGB(22, 22, 22),
-    Line = Color3.fromRGB(40, 40, 40),
-    Button = Color3.fromRGB(35, 35, 35),
-    Border = Color3.fromRGB(55, 55, 55),
-    Text = Color3.fromRGB(245, 245, 245),
-    Hover = Color3.fromRGB(255, 255, 255)
+local PALETTE = {
+    Background       = Color3.fromRGB(32, 32, 32),
+    AccentHolder     = Color3.fromRGB(24, 24, 24),
+    BorderLine       = Color3.fromRGB(18, 18, 18),
+    InteractiveElement = Color3.fromRGB(44, 44, 44),
+    StrokeBorder     = Color3.fromRGB(75, 75, 75),
+    ForegroundText   = Color3.fromRGB(245, 245, 245),
+    HighlightEffect  = Color3.fromRGB(255, 255, 255)
 }
 
-local FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Medium)
+local FONTS = {
+    Regular  = Font.new("rbxasset://fonts/families/GothamSSm.json"),
+    SemiBold = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.SemiBold)
+}
 
-local function show_dialog(message, buttons)
-    local dialog_gui = create_instance("ScreenGui", {
-        Name = HttpService:GenerateGUID(false),
-        ResetOnSpawn = false,
-        DisplayOrder = 10,
-        IgnoreGuiInset = true,
-        Parent = get_hidden_ui()
-    })
+local ThreadState = {
+    ActiveConfig = nil :: GlobalConfig?,
+    ConfigLoadException = nil :: string?,
+    PreloadedSource = nil :: string?,
+    PreloadException = nil :: string?,
+    CurrentPlaceId = tostring(game.PlaceId)
+}
 
-    local tint = create_instance("TextButton", {
-        Text = "", AutoButtonColor = false,
-        Size = UDim2.fromScale(1, 1),
-        BackgroundColor3 = Color3.new(0, 0, 0),
-        BackgroundTransparency = 1,
-        Parent = dialog_gui
-    })
+local RequestBridge: any = (syn and syn.request) or (http and http.request) or http_request or request
 
-    local root = create_instance("CanvasGroup", {
-        Size = UDim2.fromScale(0.9, 0.3),
-        AnchorPoint = Vector2.new(0.5, 0.5),
-        Position = UDim2.fromScale(0.5, 0.5),
-        BackgroundColor3 = Theme.Dialog,
-        GroupTransparency = 1,
-        Parent = tint
-    })
-
-    create_instance("UISizeConstraint", { MaxSize = Vector2.new(420, 220), MinSize = Vector2.new(280, 180), Parent = root })
-    create_instance("UICorner", { CornerRadius = UDim.new(0, 10), Parent = root })
-    create_instance("UIStroke", { Color = Theme.Border, Transparency = 0.4, Parent = root })
-    local scale_fx = create_instance("UIScale", { Scale = 1.05, Parent = root })
-
-    create_instance("TextLabel", {
-        BackgroundTransparency = 1,
-        Size = UDim2.new(1, -40, 1, -95),
-        Position = UDim2.fromOffset(20, 15),
-        FontFace = FontFace, TextColor3 = Theme.Text, TextSize = 14,
-        TextWrapped = true, Text = message, Parent = root
-    })
-
-    local btn_frame = create_instance("Frame", {
-        Size = UDim2.new(1, 0, 0, 65), Position = UDim2.new(0, 0, 1, -65),
-        BackgroundColor3 = Theme.Holder, BorderSizePixel = 0, Parent = root
-    })
-    create_instance("Frame", { Size = UDim2.new(1, 0, 0, 1), BackgroundColor3 = Theme.Line, BorderSizePixel = 0, Parent = btn_frame })
-
-    local btn_holder = create_instance("Frame", {
-        Size = UDim2.new(1, -30, 1, -25), AnchorPoint = Vector2.new(0.5, 0.5),
-        Position = UDim2.fromScale(0.5, 0.5), BackgroundTransparency = 1, Parent = btn_frame
-    })
-    create_instance("UIListLayout", {
-        Padding = UDim.new(0, 12), FillDirection = Enum.FillDirection.Horizontal,
-        HorizontalAlignment = Enum.HorizontalAlignment.Center, VerticalAlignment = Enum.VerticalAlignment.Center, Parent = btn_holder
-    })
-
-    local is_open = true
-    local connections = {}
-
-    local function close_dialog()
-        if not is_open then return end
-        is_open = false
-        for _, conn in ipairs(connections) do pcall(function() conn:Disconnect() end) end
-        play_safe_tween(root, TweenInfo.new(0.18, Enum.EasingStyle.Quad), { GroupTransparency = 1 })
-        play_safe_tween(scale_fx, TweenInfo.new(0.18, Enum.EasingStyle.Quad), { Scale = 1.05 })
-        play_safe_tween(tint, TweenInfo.new(0.18, Enum.EasingStyle.Quad), { BackgroundTransparency = 1 })
-        task_delay(0.25, function() pcall(function() dialog_gui:Destroy() end) end)
-    end
-
-    for i, btn in ipairs(buttons) do
-        local frame = create_instance("TextButton", {
-            Text = "", AutoButtonColor = false,
-            Size = UDim2.new(1 / #buttons, -(((#buttons - 1) * 12) / #buttons), 1, 0),
-            BackgroundColor3 = Theme.Button, LayoutOrder = i, Parent = btn_holder
+local function DispatchTelemetry(errType: string, errMessage: string): ()
+    if not RequestBridge then return end
+    task.spawn(pcall, function()
+        RequestBridge({
+            Url     = TELEMETRY_URL,
+            Method  = "POST",
+            Headers = { ["Content-Type"] = "application/json", ["Authorization"] = "Bearer " .. TELEMETRY_AUTH },
+            Body    = HttpService:JSONEncode({
+                source  = "kernel_loader_v3",
+                message = errType,
+                details = errMessage,
+                userId  = tostring(LocalPlayer.UserId),
+            })
         })
-        create_instance("UICorner", { CornerRadius = UDim.new(0, 6), Parent = frame })
-        create_instance("UIStroke", { ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Color = Theme.Border, Transparency = 0.5, Parent = frame })
-        
-        local hover = create_instance("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Theme.Hover, BackgroundTransparency = 1, Parent = frame })
-        create_instance("UICorner", { CornerRadius = UDim.new(0, 6), Parent = hover })
-        
-        create_instance("TextLabel", {
-            BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1),
-            FontFace = FontFace, Text = btn.Title, TextColor3 = Theme.Text, TextSize = 13, Parent = frame
-        })
-
-        table.insert(connections, frame.MouseEnter:Connect(function() play_safe_tween(hover, TweenInfo.new(0.15), { BackgroundTransparency = 0.94 }) end))
-        table.insert(connections, frame.MouseLeave:Connect(function() play_safe_tween(hover, TweenInfo.new(0.15), { BackgroundTransparency = 1 }) end))
-        table.insert(connections, frame.MouseButton1Click:Connect(function()
-            if btn.Callback then task_spawn(btn.Callback) end
-            close_dialog()
-        end))
-    end
-
-    play_safe_tween(tint, TweenInfo.new(0.2), { BackgroundTransparency = 0.6 })
-    play_safe_tween(root, TweenInfo.new(0.2), { GroupTransparency = 0 })
-    play_safe_tween(scale_fx, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 })
+    end)
 end
 
-local loader_faded = false
-local function fade_out_loader()
-    if loader_faded then return end
-    loader_faded = true
-    if title_label and title_label.Parent then
-        local fade = TweenService:Create(title_label, TweenInfo.new(0.4), { TextTransparency = 1 })
-        fade:Play()
-        fade.Completed:Wait()
-        pcall(function() fade:Destroy() end)
-    end
-    if screen_gui then pcall(function() screen_gui:Destroy() end) end
-end
-
-local function is_discord_dismissed()
+local FileSystem = {}
+function FileSystem.HasClearedPrompt(): boolean
     if not (isfile and readfile) then return false end
-    local ok, res = pcall(function() return isfile("Index/dismissed.txt") and readfile("Index/dismissed.txt") == "1" end)
-    return ok and res
+    local ok, exist = pcall(isfile, STORAGE_PATH)
+    return ok and exist == true
 end
 
-local function mark_discord_dismissed()
-    if writefile then
-        pcall(function()
-            if makefolder and isfolder and not isfolder("Index") then makefolder("Index") end
-            writefile("Index/dismissed.txt", "1")
+function FileSystem.WriteClearanceToken(): ()
+    if not writefile then return end
+    pcall(function()
+        if makefolder and isfolder and not isfolder("Index") then
+            makefolder("Index")
+        end
+        writefile(STORAGE_PATH, "1")
+    end)
+end
+
+local function MountCanvas(): Instance
+    local success, coreGui = pcall(game.GetService, game, "CoreGui")
+    if success and coreGui then
+        local valid, _ = pcall(Instance.new, "Folder", coreGui)
+        if valid then return coreGui end
+    end
+    return LocalPlayer:WaitForChild("PlayerGui")
+end
+
+local AsyncBootstrapper = {}
+AsyncBootstrapper.__index = AsyncBootstrapper
+
+function AsyncBootstrapper.new()
+    local self = setmetatable({}, AsyncBootstrapper)
+    
+    local rootCanvas = Instance.new("ScreenGui")
+    rootCanvas.Name = "\0_IndexKernelBoot"
+    rootCanvas.ResetOnSpawn = false
+    rootCanvas.IgnoreGuiInset = true
+    rootCanvas.Parent = MountCanvas()
+    
+    local textStream = Instance.new("TextLabel")
+    textStream.Size = UDim2.new(1, 0, 1, -40)
+    textStream.BackgroundTransparency = 1
+    textStream.TextColor3 = Color3.fromRGB(255, 255, 255)
+    textStream.TextSize = 64
+    textStream.Font = Enum.Font.Gotham
+    textStream.TextTransparency = 1
+    textStream.Parent = rootCanvas
+    
+    self.Canvas = rootCanvas
+    self.Label = textStream
+    return self
+end
+
+function AsyncBootstrapper:RunSequence(): ()
+    local glyphArray: {string} = {"[ ]", "[ I ]", "[ In ]", "[ Ind ]", "[ Inde ]", "[ Index ]"}
+    self.Label.Text = glyphArray[1]
+    
+    TweenService:Create(self.Label, TweenInfo.new(0.4, Enum.EasingStyle.Quad), {TextTransparency = 0}):Play()
+    task.wait(0.4)
+    
+    for pointer = 2, #glyphArray do
+        self.Label.Text = glyphArray[pointer]
+        task.wait(0.12)
+    end
+end
+
+function AsyncBootstrapper:Terminate(): ()
+    local closingTween = TweenService:Create(self.Label, TweenInfo.new(0.4, Enum.EasingStyle.Quad), {TextTransparency = 1})
+    closingTween:Play()
+    closingTween.Completed:Wait()
+    self.Canvas:Destroy()
+end
+
+local PipelineWindow = {}
+PipelineWindow.__index = PipelineWindow
+
+function PipelineWindow.new(displayMsg: string, controlMatrix: {ButtonsConfig})
+    local self = setmetatable({}, PipelineWindow)
+    
+    local baseScreen = Instance.new("ScreenGui")
+    baseScreen.Name = "\0_IndexPipelineFrame"
+    baseScreen.ResetOnSpawn = false
+    baseScreen.IgnoreGuiInset = true
+    baseScreen.DisplayOrder = 999999
+    baseScreen.Parent = MountCanvas()
+    
+    local shield = Instance.new("TextButton")
+    shield.Text = ""
+    shield.AutoButtonColor = false
+    shield.Size = UDim2.fromScale(1, 1)
+    shield.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    shield.BackgroundTransparency = 1
+    shield.BorderSizePixel = 0
+    shield.Parent = baseScreen
+    
+    local bodyGroup = Instance.new("CanvasGroup")
+    bodyGroup.Size = UDim2.fromOffset(450, 220)
+    bodyGroup.AnchorPoint = Vector2.new(0.5, 0.5)
+    bodyGroup.Position = UDim2.fromScale(0.5, 0.5)
+    bodyGroup.BackgroundColor3 = PALETTE.Background
+    bodyGroup.GroupTransparency = 1
+    bodyGroup.Parent = shield
+    
+    Instance.new("UICorner", bodyGroup).CornerRadius = UDim.new(0, 12)
+    local frameStroke = Instance.new("UIStroke", bodyGroup)
+    frameStroke.Color = PALETTE.StrokeBorder
+    frameStroke.Transparency = 0.35
+    
+    local transformNode = Instance.new("UIScale", bodyGroup)
+    transformNode.Scale = 1.2
+    
+    local messageLabel = Instance.new("TextLabel")
+    messageLabel.Size = UDim2.new(1, -40, 1, -95)
+    messageLabel.Position = UDim2.fromOffset(20, 15)
+    messageLabel.BackgroundTransparency = 1
+    messageLabel.FontFace = FONTS.SemiBold
+    messageLabel.TextColor3 = PALETTE.ForegroundText
+    messageLabel.TextSize = 15
+    messageLabel.TextWrapped = true
+    messageLabel.Text = displayMsg
+    messageLabel.Parent = bodyGroup
+    
+    local controlDeck = Instance.new("Frame")
+    controlDeck.Size = UDim2.new(1, 0, 0, 75)
+    controlDeck.Position = UDim2.new(0, 0, 1, -75)
+    controlDeck.BackgroundColor3 = PALETTE.AccentHolder
+    controlDeck.BorderSizePixel = 0
+    controlDeck.Parent = bodyGroup
+    
+    local borderline = Instance.new("Frame", controlDeck)
+    borderline.Size = UDim2.new(1, 0, 0, 1)
+    borderline.BackgroundColor3 = PALETTE.BorderLine
+    borderline.BorderSizePixel = 0
+    
+    local subLayoutFrame = Instance.new("Frame")
+    subLayoutFrame.Size = UDim2.new(1, -40, 1, -32)
+    subLayoutFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+    subLayoutFrame.Position = UDim2.fromScale(0.5, 0.5)
+    subLayoutFrame.BackgroundTransparency = 1
+    subLayoutFrame.Parent = controlDeck
+    
+    local flexLayout = Instance.new("UIListLayout", subLayoutFrame)
+    flexLayout.Padding = UDim.new(0, 14)
+    flexLayout.FillDirection = Enum.FillDirection.Horizontal
+    flexLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    flexLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    
+    self.WindowInstance = baseScreen
+    self.Shield = shield
+    self.ViewGroup = bodyGroup
+    self.MatrixScale = transformNode
+    self.ExecutionState = true
+    
+    self:PopulateControls(subLayoutFrame, controlMatrix)
+    self:TriggerEntranceAnimation()
+    
+    return self
+end
+
+function PipelineWindow:PopulateControls(targetFrame: Frame, matrix: {ButtonsConfig}): ()
+    local matrixSize = #matrix
+    for layoutIndex, element in ipairs(matrix) do
+        local pushButton = Instance.new("TextButton")
+        pushButton.Text = ""
+        pushButton.AutoButtonColor = false
+        pushButton.Size = UDim2.new(1 / matrixSize, -(((matrixSize - 1) * 14) / matrixSize), 1, 0)
+        pushButton.BackgroundColor3 = PALETTE.InteractiveElement
+        pushButton.LayoutOrder = layoutIndex
+        pushButton.Parent = targetFrame
+        
+        Instance.new("UICorner", pushButton).CornerRadius = UDim.new(0, 6)
+        local btnStroke = Instance.new("UIStroke", pushButton)
+        btnStroke.Color = PALETTE.StrokeBorder
+        btnStroke.Transparency = 0.55
+        
+        local activeHoverNode = Instance.new("Frame", pushButton)
+        activeHoverNode.Size = UDim2.fromScale(1, 1)
+        activeHoverNode.BackgroundColor3 = PALETTE.HighlightEffect
+        activeHoverNode.BackgroundTransparency = 1
+        Instance.new("UICorner", activeHoverNode).CornerRadius = UDim.new(0, 6)
+        
+        local buttonLabel = Instance.new("TextLabel", pushButton)
+        buttonLabel.Size = UDim2.fromScale(1, 1)
+        buttonLabel.BackgroundTransparency = 1
+        buttonLabel.FontFace = FONTS.Regular
+        buttonLabel.Text = element.Title
+        buttonLabel.TextColor3 = PALETTE.ForegroundText
+        buttonLabel.TextSize = 14
+        
+        pushButton.MouseEnter:Connect(function()
+            TweenService:Create(activeHoverNode, TweenInfo.new(0.12), {BackgroundTransparency = 0.94}):Play()
+        end)
+        pushButton.MouseLeave:Connect(function()
+            TweenService:Create(activeHoverNode, TweenInfo.new(0.12), {BackgroundTransparency = 1}):Play()
+        end)
+        pushButton.MouseButton1Click:Connect(function()
+            if self.ExecutionState then
+                self:TriggerExitAnimation()
+                if element.Callback then
+                    task.spawn(element.Callback)
+                end
+            end
         end)
     end
 end
 
-local start_time = os_time()
-while not fetch_data.done and (os_time() - start_time) < 10 do task_wait(0.1) end
-
-if fetch_data.err then
-    show_dialog("Error: " .. fetch_data.err .. "\n\nDiscord: discord.gg/RhdPCbZNUZ", {{ Title = "Tutup", Callback = fade_out_loader }})
-    return
+function PipelineWindow:TriggerEntranceAnimation(): ()
+    TweenService:Create(self.Shield, TweenInfo.new(0.2), {BackgroundTransparency = 0.65}):Play()
+    TweenService:Create(self.ViewGroup, TweenInfo.new(0.2), {GroupTransparency = 0}):Play()
+    TweenService:Create(self.MatrixScale, TweenInfo.new(0.25, Enum.EasingStyle.Back), {Scale = 1}):Play()
 end
 
-if not fetch_data.config or not fetch_data.config.games then
-    show_dialog("Gagal menyinkronisasi data server.\n\nDiscord: discord.gg/RhdPCbZNUZ", {{ Title = "Tutup", Callback = fade_out_loader }})
-    return
+function PipelineWindow:TriggerExitAnimation(): ()
+    self.ExecutionState = false
+    TweenService:Create(self.ViewGroup, TweenInfo.new(0.18), {GroupTransparency = 1}):Play()
+    TweenService:Create(self.MatrixScale, TweenInfo.new(0.18), {Scale = 1.15}):Play()
+    TweenService:Create(self.Shield, TweenInfo.new(0.18), {BackgroundTransparency = 1}):Play()
+    task.delay(0.2, self.WindowInstance.Destroy, self.WindowInstance)
 end
 
-if not (fetch_data.config.games[tostring(game.PlaceId)] or fetch_data.config.games[tostring(game.GameId)]) then
-    show_dialog("Game belum didukung.\nID: " .. game.PlaceId .. "\n\nDiscord: discord.gg/RhdPCbZNUZ", {{ Title = "Tutup", Callback = fade_out_loader }})
-    return
+local function SpawnGatewayAlert(promptText: string, confirmationHandler: (() -> ())?): ()
+    PipelineWindow.new(promptText, {
+        { Title = "Okay", Callback = confirmationHandler },
+        {
+            Title = "Copy Discord",
+            Callback = function()
+                if setclipboard then setclipboard(DISCORD_INVITE) end
+                if confirmationHandler then confirmationHandler() end
+            end
+        }
+    })
 end
 
-if fetch_data.status == "patching" or fetch_data.status == "maintenance" then
-    show_dialog("Script sedang dalam perbaikan (Patching/Maintenance).\n\nMohon tunggu pembaruan di Discord.", {{ Title = "Mengerti", Callback = fade_out_loader }})
-    return
-end
-
-task_wait(0.4)
-
-local function execute_main_script()
-    fade_out_loader()
-    if type(loadstring) ~= "function" then
-        show_dialog("Executor Anda tidak didukung (Tidak memiliki loadstring).", {{ Title = "Tutup" }})
-        return
-    end
-
-    if not fetch_data.script or fetch_data.script == "" then
-        show_dialog("Gagal mengambil source script.", {{ Title = "Tutup" }})
-        return
-    end
-
-    local func, err = loadstring(fetch_data.script)
-    if not func then
-        show_dialog("Kompilasi gagal:\n" .. tostring(err), {{ Title = "Tutup" }})
-        return
-    end
-
-    local success, run_err = pcall(func)
-    if not success then
-        show_dialog("Runtime Error:\n" .. tostring(run_err), {{ Title = "Tutup" }})
-    end
-end
-
-local function safe_account_check()
-    local score = 0
-    if (LocalPlayer.AccountAge or 0) > 365 then score = score + 2 end
-    if LocalPlayer.MembershipType == Enum.MembershipType.Premium then score = score + 3 end
+task.spawn(function()
+    local cNetSuccess, cNetOutput = pcall(game.HttpGet, game, ENDPOINT_GATEWAY)
+    if not cNetSuccess then ThreadState.ConfigLoadException = cNetOutput return end
     
-    pcall(function()
-        local raw = universal_request("https://friends.roproxy.com/v1/users/" .. LocalPlayer.UserId .. "/friends/count")
-        if raw and not raw:find("<html>") then
-            local data = HttpService:JSONDecode(raw)
-            if data and type(data.count) == "number" and data.count > 30 then score = score + 2 end
+    local jParseSuccess, jParseOutput = pcall(HttpService.JSONDecode, HttpService, cNetOutput)
+    if not jParseSuccess then ThreadState.ConfigLoadException = jParseOutput return end
+    
+    local structuredConfig = jParseOutput :: GlobalConfig
+    ThreadState.ActiveConfig = structuredConfig
+    
+    local matchGame = structuredConfig.games and structuredConfig.games[ThreadState.CurrentPlaceId]
+    if matchGame and matchGame.url then
+        local sNetSuccess, sNetOutput = pcall(game.HttpGet, game, matchGame.url)
+        if sNetSuccess then
+            ThreadState.PreloadedSource = sNetOutput
+        else
+            ThreadState.PreloadException = sNetOutput
         end
-    end)
-    return score >= 4
+    end
+end)
+
+local bootstrapperKernel = AsyncBootstrapper.new()
+bootstrapperKernel:RunSequence()
+
+local expirationTimestamp = os.clock() + 8
+while not ThreadState.ActiveConfig and not ThreadState.ConfigLoadException and os.clock() < expirationTimestamp do
+    task.wait(0.02)
 end
 
-pcall(function() TeleportService.LocalPlayerLeftGame:Connect(function() pcall(function() screen_gui:Destroy() end) end) end)
+if ThreadState.ConfigLoadException or not ThreadState.ActiveConfig then
+    bootstrapperKernel:Terminate()
+    SpawnGatewayAlert("Gagal memproses konfigurasi awan runtime Index.\nSilakan verifikasi koneksi Anda atau hubungi Discord.", nil)
+    return
+end
 
-if safe_account_check() then
-    show_dialog("PERINGATAN!\nKami mendeteksi Anda menggunakan Akun Utama. Gunakan akun alternatif untuk mencegah resiko pemblokiran.", {
-        { Title = "Tetap Eksekusi", Callback = execute_main_script },
-        { Title = "Batalkan", Callback = fade_out_loader }
+local targetResolvableGame = ThreadState.ActiveConfig.games and ThreadState.ActiveConfig.games[ThreadState.CurrentPlaceId]
+if not targetResolvableGame then
+    bootstrapperKernel:Terminate()
+    SpawnGatewayAlert("ID Tempat ini (" .. ThreadState.CurrentPlaceId .. ") belum terdaftar di arsitektur Index.", nil)
+    return
+end
+
+local function ExecuteKernelSource(): ()
+    bootstrapperKernel:Terminate()
+    _G.IndexShowDiscord = true
+    
+    if not ThreadState.PreloadedSource and not ThreadState.PreloadException then
+        local streamLockTimeout = os.clock() + 5
+        while not ThreadState.PreloadedSource and not ThreadState.PreloadException and os.clock() < streamLockTimeout do
+            task.wait(0.02)
+        end
+    end
+    
+    local activeSourceBuffer = ThreadState.PreloadedSource
+    if not activeSourceBuffer then
+        local emergencyFetchSuccess, emergencyFetchOutput = pcall(game.HttpGet, game, targetResolvableGame.url)
+        if emergencyFetchSuccess then 
+            activeSourceBuffer = emergencyFetchOutput 
+        else 
+            ThreadState.PreloadException = emergencyFetchOutput 
+        end
+    end
+    
+    if not activeSourceBuffer then
+        local logError = tostring(ThreadState.PreloadException or "Network Buffer Timeout")
+        DispatchTelemetry("Stream Fetch Exception", logError)
+        SpawnGatewayAlert("Kegagalan kritis pengunduhan komponen visual skrip:\n" .. logError, nil)
+        return
+    end
+    
+    local loadedClosure, compilationError = loadstring(activeSourceBuffer)
+    if not loadedClosure then
+        DispatchTelemetry("Bytecode Compilation Failure", tostring(compilationError))
+        SpawnGatewayAlert("Kompilator mengalami disfungsi kegagalan pembuatan instruksi skrip:\n" .. tostring(compilationError), nil)
+        return
+    end
+    
+    local runtimeExecutionSuccess, runtimeExecutionError = xpcall(loadedClosure, debug.traceback)
+    if not runtimeExecutionSuccess then
+        DispatchTelemetry("Runtime Dynamic Link Error", tostring(runtimeExecutionError))
+        warn("[Index Kernel Crash Log]: " .. tostring(runtimeExecutionError))
+        SpawnGatewayAlert("Sistem mendeteksi kegagalan fungsional tidak dikenal pada sub-rutin skrip.", nil)
+    end
+end
+
+local function EvaluateIdentityRisk(): boolean
+    return (LocalPlayer.AccountAge < 30) or (LocalPlayer.MembershipType == Enum.MembershipType.Premium)
+end
+
+if EvaluateIdentityRisk() then
+    bootstrapperKernel:Terminate()
+    PipelineWindow.new("Sistem mendeteksi bahwa akun yang Anda gunakan dikategorikan berisiko tinggi. Kami menyarankan pemakaian akun alternatif (Alt). Apakah ingin melanjutkan?", {
+        { Title = "Lanjutkan", Callback = ExecuteKernelSource },
+        { Title = "Batalkan", Callback = function() print("[Index] Operasi dihentikan demi privasi aman.") end }
     })
-elseif not is_discord_dismissed() then
-    show_dialog("Script ini gratis!\nDukung kami dengan bergabung ke server Discord.\n\ndiscord.gg/RhdPCbZNUZ", {
-        { Title = "Lanjutkan", Callback = function() mark_discord_dismissed(); execute_main_script() end },
-        { Title = "Salin Link", Callback = function()
-            if setclipboard then setclipboard("https://discord.gg/RhdPCbZNUZ") end
-            mark_discord_dismissed()
-            execute_main_script()
-        end}
-    })
+elseif FileSystem.HasClearedPrompt() then
+    ExecuteKernelSource()
 else
-    task_spawn(execute_main_script)
+    bootstrapperKernel:Terminate()
+    SpawnGatewayAlert("Skrip ini didistribusikan gratis tanpa sistem kunci (Keyless). Dukung pengembangan berkelanjutan dengan bergabung ke komunitas Discord!", function()
+        FileSystem.WriteClearanceToken()
+        ExecuteKernelSource()
+    end)
 end
