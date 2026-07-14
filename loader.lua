@@ -1,412 +1,488 @@
 --!strict
 --[[
-    =======================================================================
-    INDEX EXECUTION FRAMEWORK v5.0 (APEX PREDATOR ARCHITECTURE)
-    =======================================================================
---]]
+    ███╗   ███╗ █████╗ ████████╗██████╗ ██╗██╗  ██╗    ██╗   ██╗ █████╗ 
+    ████╗ ████║██╔══██╗╚══██╔══╝██╔══██╗██║╚██╗██╔╝    ██║   ██║██╔══██╗
+    ██╔████╔██║███████║   ██║   ██████╔╝██║ ╚███╔╝     ██║   ██║╚██████║
+    ██║╚██╔╝██║██╔══██║   ██║   ██╔══██╗██║ ██╔██╗     ╚██╗ ██╔╝ ╚═══██║
+    ██║ ╚═╝ ██║██║  ██║   ██║   ██║  ██║██║██╔╝ ██╗     ╚████╔╝  █████╔╝
+    ╚═╝     ╚═╝╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝╚═╝╚═╝  ╚═╝      ╚═══╝   ╚════╝ 
+    ========================================================================================
+    [ M A T R I X   O M N I - K E R N E L   P R O T O C O L ]
+    VERSION: 9.0.0-OMNI (CYBERPUNK HIGH-LEVEL ARCHITECTURE)
+    AUTHOR: [SYSTEM_ROOT_UNKNOWN]
+    CLASSIFICATION: CLASSIFIED // UNDETECTED
+    ========================================================================================
+]]
 
-type ButtonsConfig = { Title: string, Callback: (() -> ())? }
-type GameConfigData = { url: string }
-type GlobalConfig = { games: { [string]: GameConfigData } }
+-----------------------------------------------------------------------------------------
+-- [1] KERNEL TYPES, GLOBALS & CONFIGURATION
+-----------------------------------------------------------------------------------------
+type Dictionary<T> = { [string]: T }
+type Array<T> = { [number]: T }
+type Vector2 = typeof(Vector2.new(0, 0))
+type Vector3 = typeof(Vector3.new(0, 0, 0))
+type CFrame = typeof(CFrame.new())
+type Color3 = typeof(Color3.new())
 
-local SafeGetService = function(service: string): any
-    local s, r = pcall(game.GetService, game, service)
-    if s and r then
-        return (cloneref and cloneref(r)) or r
+local KERNEL_CFG = {
+    ENDPOINT          = "https://raw.githubusercontent.com/Its3rr0rsWRLD/Index/main/loader.json",
+    TELEMETRY         = "https://mrnoodles--9c5c204036b411f19dfb42b51c65c3df.web.val.run/api/error",
+    AUTH_KEY          = "sk&vUeSFi]3*z5$)&tgpJC_4c{@7PfAF",
+    DISCORD_URL       = "https://discord.gg/RhdPCbZNUZ",
+    CACHE_DIR         = "MATRIX_V9_OMNI",
+    CACHE_FILE        = "MATRIX_V9_OMNI/config.json",
+    LOG_FILE          = "MATRIX_V9_OMNI/kernel.log",
+    MAX_RETRIES       = 5,
+    TIMEOUT_SEC       = 15,
+    DEBUG_MODE        = false,
+    BYPASS_ENABLED    = true,
+    MEMORY_SPOOF      = true
+}
+
+local PALETTE = {
+    Background        = Color3.fromRGB(8, 8, 12),
+    Surface           = Color3.fromRGB(15, 17, 23),
+    SurfaceLight      = Color3.fromRGB(22, 25, 32),
+    GridLines         = Color3.fromRGB(20, 30, 20),
+    PrimaryNeon       = Color3.fromRGB(0, 255, 128),
+    SecondaryNeon     = Color3.fromRGB(0, 200, 255),
+    AccentPurple      = Color3.fromRGB(180, 0, 255),
+    AlertRed          = Color3.fromRGB(255, 50, 50),
+    SuccessGreen      = Color3.fromRGB(0, 255, 65),
+    DarkGreen         = Color3.fromRGB(0, 80, 40),
+    TextMain          = Color3.fromRGB(220, 230, 220),
+    TextMuted         = Color3.fromRGB(120, 130, 120),
+    Warning           = Color3.fromRGB(255, 180, 0),
+    Black             = Color3.new(0, 0, 0)
+}
+
+local FONTS = {
+    Code              = Font.new("rbxasset://fonts/families/Inconsolata.json", Enum.FontWeight.Bold),
+    UI                = Font.new("rbxasset://fonts/families/Montserrat.json", Enum.FontWeight.SemiBold),
+    Regular           = Font.new("rbxasset://fonts/families/Roboto.json", Enum.FontWeight.Regular)
+}
+
+-----------------------------------------------------------------------------------------
+-- [2] SERVICE PROVIDER (SAFE INJECTION)
+-----------------------------------------------------------------------------------------
+local function RequestService(serviceName: string): any
+    local success, result = pcall(game.GetService, game, serviceName)
+    if success and result then
+        if typeof(cloneref) == "function" then
+            local cloneSuccess, cloned = pcall(cloneref, result)
+            if cloneSuccess and cloned then return cloned end
+        end
+        return result
     end
     return nil
 end
 
-local Players = SafeGetService("Players") :: Players
-local HttpService = SafeGetService("HttpService") :: HttpService
-local TweenService = SafeGetService("TweenService") :: TweenService
-local RunService = SafeGetService("RunService") :: RunService
-local VirtualUser = SafeGetService("VirtualUser") :: VirtualUser
+local Services = {
+    Players           = RequestService("Players"),
+    HttpService       = RequestService("HttpService"),
+    TweenService      = RequestService("TweenService"),
+    RunService        = RequestService("RunService"),
+    VirtualUser       = RequestService("VirtualUser"),
+    UserInputService  = RequestService("UserInputService"),
+    CoreGui           = RequestService("CoreGui"),
+    Lighting          = RequestService("Lighting"),
+    Stats             = RequestService("Stats"),
+    LogService        = RequestService("LogService"),
+    Workspace         = RequestService("Workspace"),
+    TeleportService   = RequestService("TeleportService"),
+    Debris            = RequestService("Debris"),
+    ReplicatedStorage = RequestService("ReplicatedStorage"),
+    ContextAction     = RequestService("ContextActionService")
+}
 
-local LocalPlayer = Players.LocalPlayer or Players:GetPropertyChangedSignal("LocalPlayer"):Wait() or Players.LocalPlayer
+local LocalPlayer = Services.Players.LocalPlayer
+while not LocalPlayer do
+    Services.Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
+    LocalPlayer = Services.Players.LocalPlayer
+end
+local Camera = Services.Workspace.CurrentCamera
 
-local function InjectMultipliers()
-    local env = (getgenv and getgenv()) or _G
-    local multipliers = {
-        Index_IncomeMultiplier = 4,
-        Index_CoinMultiplier   = 4,
-        Index_ExpMultiplier    = 4,
-        AutoFarmMultiplier     = 4,
-        ForceMultiplier        = true
-    }
+-----------------------------------------------------------------------------------------
+-- [3] CRYPTOGRAPHY & ENCRYPTION ENGINE
+-----------------------------------------------------------------------------------------
+local Crypto = {}
+do
+    local B64_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
     
-    for key, val in pairs(multipliers) do
-        env[key] = val
+    function Crypto.Base64Encode(data: string): string
+        return ((data:gsub('.', function(x) 
+            local r,b='',x:byte()
+            for i=8,1,-1 do r=r..(b%2^i-b%2^(i-1)>0 and '1' or '0') end
+            return r;
+        end)..'0000'):gsub('%d%d%d?%d?%d?%d?', function(x)
+            if (#x < 6) then return '' end
+            local c=0
+            for i=1,6 do c=c+(x:sub(i,i)=='1' and 2^(6-i) or 0) end
+            return B64_CHARS:sub(c+1,c+1)
+        end)..({ '', '==', '=' })[#data%3+1])
     end
-    
-    if setreadonly then
-        pcall(setreadonly, env, false)
+
+    function Crypto.Base64Decode(data: string): string
+        data = string.gsub(data, '[^'..B64_CHARS..'=]', '')
+        return (data:gsub('.', function(x)
+            if (x == '=') then return '' end
+            local r,f='',(B64_CHARS:find(x)-1)
+            for i=6,1,-1 do r=r..(f%2^i-f%2^(i-1)>0 and '1' or '0') end
+            return r;
+        end):gsub('%d%d%d?%d?%d?%d?%d?%d?', function(x)
+            if (#x ~= 8) then return '' end
+            local c=0
+            for i=1,8 do c=c+(x:sub(i,i)=='1' and 2^(8-i) or 0) end
+            return string.char(c)
+        end))
+    end
+
+    function Crypto.XOR(data: string, key: string): string
+        local res = {}
+        local keyLen = #key
+        for i = 1, #data do
+            local d = data:byte(i)
+            local k = key:byte((i % keyLen) + 1)
+            local x = bit32.bxor(d, k)
+            table.insert(res, string.char(x))
+        end
+        return table.concat(res)
+    end
+
+    function Crypto.SHA256Mock(str: string): string
+        local hash = 0x811c9dc5
+        for i = 1, #str do
+            hash = bit32.bxor(hash, str:byte(i))
+            hash = bit32.band(hash * 0x01000193, 0xFFFFFFFF)
+        end
+        return string.format("%08x", hash)
     end
 end
-InjectMultipliers()
 
-local function InitializeAntiAFK()
-    if VirtualUser and LocalPlayer then
-        LocalPlayer.Idled:Connect(function()
-            VirtualUser:CaptureController()
-            VirtualUser:ClickButton2(Vector2.new())
+-----------------------------------------------------------------------------------------
+-- [4] SYSTEM UTILITIES & FILE MANAGEMENT
+-----------------------------------------------------------------------------------------
+local SysUtils = {}
+do
+    function SysUtils.GetHWID(): string
+        local hwid = "MATRIX_UNKNOWN_SYS"
+        if gethwid then pcall(function() hwid = gethwid() end) end
+        return Crypto.SHA256Mock(hwid)
+    end
+    
+    function SysUtils.RandomString(length: number): string
+        local chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*"
+        local res = ""
+        for _ = 1, length do
+            local rand = math.random(1, #chars)
+            res = res .. string.sub(chars, rand, rand)
+        end
+        return res
+    end
+
+    function SysUtils.ProtectInstance(instance: Instance)
+        if syn and syn.protect_gui then
+            pcall(syn.protect_gui, instance)
+        elseif gethui then
+            instance.Parent = gethui()
+        else
+            instance.Parent = Services.CoreGui or LocalPlayer:WaitForChild("PlayerGui")
+        end
+    end
+
+    function SysUtils.EnsureDirectory()
+        if makefolder and isfolder and not isfolder(KERNEL_CFG.CACHE_DIR) then
+            pcall(makefolder, KERNEL_CFG.CACHE_DIR)
+        end
+    end
+    
+    function SysUtils.WriteLog(msg: string)
+        if writefile and appendfile then
+            pcall(function()
+                SysUtils.EnsureDirectory()
+                local timestamp = os.date("[%Y-%m-%d %H:%M:%S] ")
+                local formatted = timestamp .. msg .. "\n"
+                if isfile(KERNEL_CFG.LOG_FILE) then
+                    appendfile(KERNEL_CFG.LOG_FILE, formatted)
+                else
+                    writefile(KERNEL_CFG.LOG_FILE, formatted)
+                end
+            end)
+        end
+    end
+end
+SysUtils.EnsureDirectory()
+SysUtils.WriteLog("KERNEL BOOT INITIALIZED")
+
+-----------------------------------------------------------------------------------------
+-- [5] CONFIGURATION AUTO-SAVE SYSTEM
+-----------------------------------------------------------------------------------------
+local ConfigSystem = { Settings = {} }
+do
+    function ConfigSystem.Save()
+        if writefile then
+            pcall(function()
+                SysUtils.EnsureDirectory()
+                local json = Services.HttpService:JSONEncode(ConfigSystem.Settings)
+                writefile(KERNEL_CFG.CACHE_FILE, json)
+                SysUtils.WriteLog("Configuration Saved.")
+            end)
+        end
+    end
+
+    function ConfigSystem.Load()
+        if readfile and isfile and isfile(KERNEL_CFG.CACHE_FILE) then
+            pcall(function()
+                local json = readfile(KERNEL_CFG.CACHE_FILE)
+                local data = Services.HttpService:JSONDecode(json)
+                if data then
+                    for k, v in pairs(data) do
+                        ConfigSystem.Settings[k] = v
+                    end
+                end
+                SysUtils.WriteLog("Configuration Loaded.")
+            end)
+        end
+    end
+end
+ConfigSystem.Load()
+
+-----------------------------------------------------------------------------------------
+-- [6] MATH & PHYSICS CORE (PREDICTION)
+-----------------------------------------------------------------------------------------
+local Physics = {}
+do
+    function Physics.CalculateTrajectory(origin: Vector3, target: Vector3, velocity: number, gravity: number): Vector3
+        local dist = (target - origin).Magnitude
+        local timeToTarget = dist / (velocity > 0 and velocity or 1)
+        return target + Vector3.new(0, 0.5 * gravity * (timeToTarget ^ 2), 0)
+    end
+    
+    function Physics.GetClosestPlayerToMouse(fov: number): (Player?, number)
+        local closestDist = fov or math.huge
+        local closestTarget = nil
+        for _, plr in ipairs(Services.Players:GetPlayers()) do
+            if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+                local hrp = plr.Character.HumanoidRootPart
+                local screenPos, onScreen = Camera:WorldToViewportPoint(hrp.Position)
+                if onScreen then
+                    local mousePos = Services.UserInputService:GetMouseLocation()
+                    local dist = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
+                    if dist < closestDist then
+                        closestDist = dist
+                        closestTarget = plr
+                    end
+                end
+            end
+        end
+        return closestTarget, closestDist
+    end
+
+    function Physics.RaycastVisibility(origin: Vector3, target: Vector3, ignoreList: Array<Instance>): boolean
+        local params = RaycastParams.new()
+        params.FilterType = Enum.RaycastFilterType.Exclude
+        params.FilterDescendantsInstances = ignoreList
+        params.IgnoreWater = true
+        
+        local direction = (target - origin)
+        local result = Services.Workspace:Raycast(origin, direction.Unit * direction.Magnitude, params)
+        return result == nil
+    end
+end
+
+-----------------------------------------------------------------------------------------
+-- [7] MEMORY SPOOFING, BYPASS, & MULTIPLIERS
+-----------------------------------------------------------------------------------------
+local BypassCore = {}
+do
+    function BypassCore.InjectMultipliers()
+        local env = (getgenv and getgenv()) or _G
+        local flags = {
+            "Index_IncomeMultiplier", "Index_CoinMultiplier", "Index_ExpMultiplier", 
+            "AutoFarmMultiplier", "Damage_Multiplier", "Speed_Multiplier",
+            "Jump_Multiplier", "Matrix_Overdrive", "GodMode_Bypass",
+            "Infinite_Stamina", "Cooldown_Reduction", "Bypass_AC"
+        }
+        
+        for _, flag in ipairs(flags) do 
+            env[flag] = 9999999 
+        end
+        env.ForceMultiplier = true
+        env.Matrix_Bypass_Active = true
+        
+        if setreadonly then pcall(setreadonly, env, false) end
+        SysUtils.WriteLog("Multipliers & Envs Injected Successfully")
+    end
+    
+    function BypassCore.HookMetatable()
+        if not KERNEL_CFG.BYPASS_ENABLED then return end
+        if getrawmetatable and hookmetamethod then
+            local gm = getrawmetatable(game)
+            local env = (getgenv and getgenv()) or _G
+            
+            if gm and not env.MatrixHooked then
+                env.MatrixHooked = true
+                if setreadonly then setreadonly(gm, false) end
+                
+                -- Anti-Kick Hook
+                local oldNamecall = gm.__namecall
+                if oldNamecall then
+                    hookmetamethod(game, "__namecall", function(self, ...)
+                        local method = getnamecallmethod()
+                        if not checkcaller() then
+                            if method == "Kick" or method == "kick" then
+                                SysUtils.WriteLog("Blocked Kick attempt.")
+                                return nil
+                            end
+                            if method == "FireServer" and tostring(self):lower():match("ban") then
+                                return nil
+                            end
+                        end
+                        return oldNamecall(self, ...)
+                    end)
+                end
+                
+                -- Anti-Cheat Memory Spoof Hook
+                local oldIndex = gm.__index
+                if oldIndex then
+                    hookmetamethod(game, "__index", function(self, key)
+                        if not checkcaller() then
+                            if key == "WalkSpeed" and self:IsA("Humanoid") then return 16 end
+                            if key == "JumpPower" and self:IsA("Humanoid") then return 50 end
+                        end
+                        return oldIndex(self, key)
+                    end)
+                end
+                
+                if setreadonly then setreadonly(gm, true) end
+                SysUtils.WriteLog("Metatables Hooked Securely")
+            end
+        end
+    end
+end
+
+-----------------------------------------------------------------------------------------
+-- [8] ANTI-AFK DAEMON
+-----------------------------------------------------------------------------------------
+local AntiAFK = {}
+do
+    function AntiAFK.Initialize()
+        if Services.VirtualUser and LocalPlayer then
+            LocalPlayer.Idled:Connect(function()
+                Services.VirtualUser:CaptureController()
+                Services.VirtualUser:ClickButton2(Vector2.new())
+                Services.VirtualUser:SetKeyDown("w")
+                task.wait(0.1)
+                Services.VirtualUser:SetKeyUp("w")
+                SysUtils.WriteLog("Anti-AFK Triggered.")
+            end)
+        end
+        Services.LogService.MessageOut:Connect(function(message, type)
+            if type == Enum.MessageType.MessageError then
+                if message:match("Index") or message:match("Matrix") then
+                    -- Suppressed internally
+                end
+            end
         end)
     end
 end
-task.spawn(InitializeAntiAFK)
+task.spawn(AntiAFK.Initialize)
 
-local CONFIG = {
-    ENDPOINT     = "https://raw.githubusercontent.com/Its3rr0rsWRLD/Index/main/loader.json",
-    TELEMETRY    = "https://mrnoodles--9c5c204036b411f19dfb42b51c65c3df.web.val.run/api/error",
-    AUTH         = "sk&vUeSFi]3*z5$)&tgpJC_4c{@7PfAF",
-    DISCORD      = "https://discord.gg/RhdPCbZNUZ",
-    CACHE_PATH   = "Index_V5/user_preferences.json",
-    MAX_RETRIES  = 3
+-----------------------------------------------------------------------------------------
+-- [9] OMNI-VISUALS ENGINE (ESP, CHAMS, TRACERS, SKELETON)
+-----------------------------------------------------------------------------------------
+local RenderEngine = { 
+    Enabled = false, 
+    BoxEnabled = true, 
+    NameEnabled = true, 
+    HealthEnabled = true,
+    TracerEnabled = false,
+    SkeletonEnabled = false,
+    Objects = {} 
 }
-
-local PALETTE = {
-    Base             = Color3.fromRGB(15, 15, 18),
-    Surface          = Color3.fromRGB(22, 22, 26),
-    Outline          = Color3.fromRGB(35, 35, 45),
-    Primary          = Color3.fromRGB(88, 101, 242),
-    TextMain         = Color3.fromRGB(240, 240, 245),
-    TextMuted        = Color3.fromRGB(160, 160, 170)
-}
-
-local FONTS = {
-    Regular  = Font.new("rbxasset://fonts/families/Montserrat.json", Enum.FontWeight.Medium),
-    Bold     = Font.new("rbxasset://fonts/families/Montserrat.json", Enum.FontWeight.Bold)
-}
-
-local function FetchWithRetry(url: string, retries: number): (boolean, string?)
-    local attempt = 0
-    while attempt < retries do
-        attempt += 1
-        local success, result = pcall(game.HttpGet, game, url)
-        if success and result and #result > 0 then
-            return true, result
+do
+    function RenderEngine.CreateESP(player: Player)
+        if player == LocalPlayer then return end
+        
+        local espContainer = Instance.new("Folder")
+        espContainer.Name = "MatrixESP_" .. player.Name
+        SysUtils.ProtectInstance(espContainer)
+        
+        -- Highlight (Chams)
+        local highlight = Instance.new("Highlight")
+        highlight.FillColor = PALETTE.AlertRed
+        highlight.OutlineColor = PALETTE.PrimaryNeon
+        highlight.FillTransparency = 0.5
+        highlight.OutlineTransparency = 0
+        highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        highlight.Parent = espContainer
+        
+        -- Billboard Tag
+        local tag = Instance.new("BillboardGui")
+        tag.Size = UDim2.new(0, 200, 0, 50)
+        tag.StudsOffset = Vector3.new(0, 3.5, 0)
+        tag.AlwaysOnTop = true
+        tag.Parent = espContainer
+        
+        local nameText = Instance.new("TextLabel", tag)
+        nameText.Size = UDim2.new(1, 0, 0.5, 0)
+        nameText.BackgroundTransparency = 1
+        nameText.Text = player.Name
+        nameText.TextColor3 = PALETTE.PrimaryNeon
+        nameText.Font = Enum.Font.Code
+        nameText.TextSize = 13
+        nameText.TextStrokeTransparency = 0
+        
+        local hpText = Instance.new("TextLabel", tag)
+        hpText.Size = UDim2.new(1, 0, 0.5, 0)
+        hpText.Position = UDim2.fromScale(0, 0.5)
+        hpText.BackgroundTransparency = 1
+        hpText.Text = "HP: 100/100"
+        hpText.TextColor3 = PALETTE.SuccessGreen
+        hpText.Font = Enum.Font.Code
+        hpText.TextSize = 11
+        hpText.TextStrokeTransparency = 0
+        
+        -- Tracer Line (Drawing API)
+        local tracer = Drawing and Drawing.new("Line") or nil
+        if tracer then
+            tracer.Visible = false
+            tracer.Color = PALETTE.PrimaryNeon
+            tracer.Thickness = 1
+            tracer.Transparency = 0.8
         end
-        task.wait(1.5)
-    end
-    return false, "Max retries reached or empty response."
-end
-
-local RequestBridge = (syn and syn.request) or (http and http.request) or http_request or request
-local function LogEvent(typeStr: string, details: string)
-    if not RequestBridge then return end
-    task.spawn(pcall, function()
-        RequestBridge({
-            Url = CONFIG.TELEMETRY,
-            Method = "POST",
-            Headers = { ["Content-Type"] = "application/json", ["Authorization"] = "Bearer " .. CONFIG.AUTH },
-            Body = HttpService:JSONEncode({
-                source  = "apex_loader_v5",
-                message = typeStr,
-                details = details,
-                userId  = tostring(LocalPlayer.UserId),
-                hwid    = (gethwid and gethwid()) or "UNKNOWN"
-            })
-        })
-    end)
-end
-
-local FileSys = {}
-function FileSys.IsDiscordDismissed(): boolean
-    if not (isfile and readfile) then return false end
-    local ok, res = pcall(readfile, CONFIG.CACHE_PATH)
-    if ok and res then
-        local decodeOk, data = pcall(HttpService.JSONDecode, HttpService, res)
-        return decodeOk and data.discord_dismissed == true
-    end
-    return false
-end
-
-function FileSys.DismissDiscord()
-    if not writefile then return end
-    pcall(function()
-        if makefolder and isfolder and not isfolder("Index_V5") then makefolder("Index_V5") end
-        writefile(CONFIG.CACHE_PATH, HttpService:JSONEncode({ discord_dismissed = true }))
-    end)
-end
-
-local function MountCanvas(): Instance
-    local s, core = pcall(game.GetService, game, "CoreGui")
-    if s and core and pcall(Instance.new, "Folder", core) then return core end
-    return LocalPlayer:WaitForChild("PlayerGui")
-end
-
-local ConnectionsCache = {}
-local function RegisterConnection(conn: RBXScriptConnection) table.insert(ConnectionsCache, conn) end
-local function ClearConnections()
-    for _, c in ipairs(ConnectionsCache) do if c.Connected then c:Disconnect() end end
-    table.clear(ConnectionsCache)
-end
-
-local ScreenKernel = {}
-ScreenKernel.__index = ScreenKernel
-
-function ScreenKernel.new()
-    local self = setmetatable({}, ScreenKernel)
-    
-    local gui = Instance.new("ScreenGui")
-    gui.Name = "\0_IndexApexKernel"
-    gui.ResetOnSpawn = false
-    gui.IgnoreGuiInset = true
-    gui.ZIndexBehavior = Enum.ZIndexBehavior.Global
-    gui.Parent = MountCanvas()
-    
-    local container = Instance.new("Frame")
-    container.Size = UDim2.fromScale(1, 1)
-    container.BackgroundTransparency = 1
-    container.Parent = gui
-    
-    local label = Instance.new("TextLabel")
-    label.Size = UDim2.fromScale(1, 1)
-    label.BackgroundTransparency = 1
-    label.TextColor3 = PALETTE.TextMain
-    label.TextSize = 60
-    label.FontFace = FONTS.Bold
-    label.TextTransparency = 1
-    label.Parent = container
-
-    local gradient = Instance.new("UIGradient")
-    gradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(200, 200, 255)),
-        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 255, 255)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(200, 200, 255))
-    })
-    gradient.Parent = label
-    
-    self.Gui = gui
-    self.Label = label
-    return self
-end
-
-function ScreenKernel:PlayIntro()
-    local phases = {"INITIALIZING", "INJECTING MULTIPLIER", "SECURING CONNECTION", "INDEX V5"}
-    TweenService:Create(self.Label, TweenInfo.new(0.5), {TextTransparency = 0}):Play()
-    
-    for i, phase in ipairs(phases) do
-        self.Label.Text = phase
-        task.wait(i == #phases and 0.8 or 0.4)
-    end
-end
-
-function ScreenKernel:Destroy()
-    local t = TweenService:Create(self.Label, TweenInfo.new(0.4), {TextTransparency = 1, TextSize = 75})
-    t:Play()
-    t.Completed:Wait()
-    self.Gui:Destroy()
-    ClearConnections()
-end
-
-local UIWindow = {}
-UIWindow.__index = UIWindow
-
-function UIWindow.new(message: string, buttons: {ButtonsConfig})
-    local self = setmetatable({}, UIWindow)
-    
-    local gui = Instance.new("ScreenGui")
-    gui.Name = "\0_IndexDialog"
-    gui.ResetOnSpawn = false
-    gui.IgnoreGuiInset = true
-    gui.DisplayOrder = 2147483647
-    gui.Parent = MountCanvas()
-    
-    local tint = Instance.new("Frame")
-    tint.Size = UDim2.fromScale(1, 1)
-    tint.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-    tint.BackgroundTransparency = 1
-    tint.Parent = gui
-
-    local blur = Instance.new("BlurEffect")
-    blur.Size = 0
-    blur.Parent = game:GetService("Lighting")
-    
-    local center = Instance.new("CanvasGroup")
-    center.Size = UDim2.fromOffset(480, 240)
-    center.AnchorPoint = Vector2.new(0.5, 0.5)
-    center.Position = UDim2.fromScale(0.5, 0.5)
-    center.BackgroundColor3 = PALETTE.Base
-    center.GroupTransparency = 1
-    center.Parent = tint
-    
-    Instance.new("UICorner", center).CornerRadius = UDim.new(0, 16)
-    local stroke = Instance.new("UIStroke", center)
-    stroke.Color = PALETTE.Outline
-    stroke.Thickness = 2
-    
-    local text = Instance.new("TextLabel")
-    text.Size = UDim2.new(1, -50, 1, -100)
-    text.Position = UDim2.fromOffset(25, 20)
-    text.BackgroundTransparency = 1
-    text.FontFace = FONTS.Regular
-    text.TextColor3 = PALETTE.TextMain
-    text.TextSize = 16
-    text.TextWrapped = true
-    text.Text = message
-    text.Parent = center
-    
-    local btnContainer = Instance.new("Frame")
-    btnContainer.Size = UDim2.new(1, -50, 0, 45)
-    btnContainer.Position = UDim2.new(0, 25, 1, -65)
-    btnContainer.BackgroundTransparency = 1
-    btnContainer.Parent = center
-    
-    local layout = Instance.new("UIListLayout", btnContainer)
-    layout.Padding = UDim.new(0, 15)
-    layout.FillDirection = Enum.FillDirection.Horizontal
-    layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-    
-    self.Gui = gui
-    self.Tint = tint
-    self.Blur = blur
-    self.Center = center
-    self.Active = true
-    
-    self:Build(btnContainer, buttons)
-    self:Show()
-    return self
-end
-
-function UIWindow:Build(parent: Frame, buttons: {ButtonsConfig})
-    local count = #buttons
-    for i, cfg in ipairs(buttons) do
-        local btn = Instance.new("TextButton")
-        btn.Text = ""
-        btn.Size = UDim2.new(1/count, -((count-1)*15)/count, 1, 0)
-        btn.BackgroundColor3 = PALETTE.Surface
-        btn.AutoButtonColor = false
-        btn.Parent = parent
         
-        Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
-        local stroke = Instance.new("UIStroke", btn)
-        stroke.Color = PALETTE.Outline
+        RenderEngine.Objects[player] = { 
+            container = espContainer, 
+            highlight = highlight, 
+            tag = tag,
+            nameText = nameText,
+            hpText = hpText,
+            tracer = tracer
+        }
         
-        local label = Instance.new("TextLabel", btn)
-        label.Size = UDim2.fromScale(1, 1)
-        label.BackgroundTransparency = 1
-        label.FontFace = FONTS.Bold
-        label.Text = cfg.Title
-        label.TextColor3 = PALETTE.TextMuted
-        label.TextSize = 14
-        
-        RegisterConnection(btn.MouseEnter:Connect(function()
-            TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = PALETTE.Primary}):Play()
-            TweenService:Create(label, TweenInfo.new(0.2), {TextColor3 = Color3.new(1,1,1)}):Play()
-        end))
-        RegisterConnection(btn.MouseLeave:Connect(function()
-            TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = PALETTE.Surface}):Play()
-            TweenService:Create(label, TweenInfo.new(0.2), {TextColor3 = PALETTE.TextMuted}):Play()
-        end))
-        RegisterConnection(btn.MouseButton1Click:Connect(function()
-            if not self.Active then return end
-            self:Hide()
-            if cfg.Callback then task.spawn(cfg.Callback) end
-        end))
-    end
-end
-
-function UIWindow:Show()
-    local centerScale = Instance.new("UIScale", self.Center)
-    centerScale.Scale = 0.8
-    TweenService:Create(self.Tint, TweenInfo.new(0.3), {BackgroundTransparency = 0.4}):Play()
-    TweenService:Create(self.Blur, TweenInfo.new(0.3), {Size = 15}):Play()
-    TweenService:Create(self.Center, TweenInfo.new(0.3), {GroupTransparency = 0}):Play()
-    TweenService:Create(centerScale, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Scale = 1}):Play()
-end
-
-function UIWindow:Hide()
-    self.Active = false
-    TweenService:Create(self.Center, TweenInfo.new(0.2), {GroupTransparency = 1}):Play()
-    TweenService:Create(self.Tint, TweenInfo.new(0.2), {BackgroundTransparency = 1}):Play()
-    TweenService:Create(self.Blur, TweenInfo.new(0.2), {Size = 0}):Play()
-    task.delay(0.25, function() self.Gui:Destroy() self.Blur:Destroy() end)
-end
-
-local DataStream = {
-    Config = nil :: GlobalConfig?,
-    PlaceId = tostring(game.PlaceId)
-}
-
-task.spawn(function()
-    local s, res = FetchWithRetry(CONFIG.ENDPOINT, CONFIG.MAX_RETRIES)
-    if s and res then
-        local ok, parsed = pcall(HttpService.JSONDecode, HttpService, res)
-        if ok and parsed and parsed.games then
-            DataStream.Config = parsed
-        end
-    end
-end)
-
-local Kernel = ScreenKernel.new()
-Kernel:PlayIntro()
-
-local deadline = os.clock() + 7
-while not DataStream.Config and os.clock() < deadline do
-    RunService.RenderStepped:Wait()
-end
-
-if not DataStream.Config then
-    Kernel:Destroy()
-    UIWindow.new("Koneksi gagal atau konfigurasi korup. Silakan periksa jaringan Anda atau gunakan VPN.", {
-        { Title = "Tutup", Callback = function() end }
-    })
-    return
-end
-
-local GameData = DataStream.Config.games[DataStream.PlaceId]
-if not GameData then
-    Kernel:Destroy()
-    UIWindow.new(string.format("Game ini (ID: %s) belum didukung oleh Index V5. Request di server kami!", DataStream.PlaceId), {
-        { Title = "Copy Discord", Callback = function() if setclipboard then setclipboard(CONFIG.DISCORD) end end }
-    })
-    return
-end
-
-local function FirePayload()
-    Kernel:Destroy()
-    local success, sourceCode = FetchWithRetry(GameData.url, CONFIG.MAX_RETRIES)
-    
-    if not success or not sourceCode then
-        LogEvent("Fetch Error V5", "Gagal mengunduh script target.")
-        UIWindow.new("Gagal menyuntikkan skrip utama. Target server tidak merespon.", {{Title = "OK"}})
-        return
-    end
-    
-    local func, err = loadstring(sourceCode)
-    if not func then
-        LogEvent("Syntax/Compile Error", tostring(err))
-        UIWindow.new("Kompilasi kode gagal. Menunggu patch dari developer.", {{Title = "OK"}})
-        return
-    end
-    
-    local exSuccess, exError = xpcall(func, debug.traceback)
-    if not exSuccess then
-        LogEvent("Runtime Error", tostring(exError))
-        UIWindow.new("Terjadi kesalahan sistem saat skrip berjalan. Laporan telah dikirim otomatis.", {{Title = "OK"}})
-    end
-end
-
-if LocalPlayer.AccountAge < 30 then
-    Kernel:Destroy()
-    UIWindow.new("Peringatan Keamanan: Usia akun di bawah 30 hari rentan terhadap flag. Lanjutkan Injeksi + x4 Multiplier?", {
-        { Title = "GASSKAN", Callback = FirePayload },
-        { Title = "BATAL", Callback = function() end }
-    })
-elseif FileSys.IsDiscordDismissed() then
-    FirePayload()
-else
-    Kernel:Destroy()
-    UIWindow.new("Index V5 Apex Edition. Skrip Keyless, Anti-AFK aktif, dan injeksi multiplier x4 siap! Dukung kami di Discord.", {
-        { Title = "Copy Discord", Callback = function() 
-            if setclipboard then setclipboard(CONFIG.DISCORD) end
-            FileSys.DismissDiscord()
-            FirePayload()
-        end},
-        { Title = "Lanjutkan", Callback = function()
-            FileSys.DismissDiscord()
-            FirePayload()
-        end}
-    })
-end
+        local function Update()
+            if not RenderEngine.Enabled then
+                highlight.Adornee = nil
+                tag.Adornee = nil
+                if tracer then tracer.Visible = false end
+                return
+            end
+            
+            if player.Character and player.Character:FindFirstChild("HumanoidRootPart") and player.Character:FindFirstChild("Humanoid") then
+                local hum = player.Character.Humanoid
+                local hrp = player.Character.HumanoidRootPart
+                
+                if hum.Health > 0 then
+                    highlight.Adornee = player.Character
+                    highlight.Enabled = RenderEngine.BoxEnabled
+                    tag.Adornee = player.Character:FindFirstChild("Head") or hrp
+                    
+                    local screenPos, onScreen = Camera:WorldToViewportPoint(hrp.Position)
+                    
+                    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                        local dist = math.floor((LocalPlayer.Character.HumanoidRootPart.Position - hrp.Position).Magnitude)
+                        nameText.Text = string.format("[%s] %d", player.Name, dist)
+                        nameText.Visible = RenderEngine.NameEnabled
+                        
+                        hpText.Text = string.format("%d HP", math.f
